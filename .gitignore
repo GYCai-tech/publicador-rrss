@@ -1,0 +1,45 @@
+#  CONFIGURACIÓN ESPEFÍFICA DE PYCHARM
+.idea/
+
+#  ENTORNOS VIRTUALES Y DEPENDENCIAS
+.venv/
+venv/
+env/
+ENV/
+
+#  ARCHIVOS DE PYTHON GENERADOS AUTOMÁTICAMENTE
+__pycache__/
+
+# Archivos de Python compilados.
+*.pyc
+*.pyo
+*.pyd
+
+#  EMPAQUETADO Y DISTRIBUCIÓN
+build/
+dist/
+*.egg-info/
+
+#  TESTS Y COBERTURA DE CÓDIGO
+.pytest_cache/
+.coverage
+htmlcov/
+
+#  ARCHIVOS DE CONFIGURACIÓN Y SECRETOS
+.env
+*.env
+
+#  LOGS Y ARCHIVOS TEMPORALES
+*.log
+pip-log.txt
+
+# ARCHIVOS ESPECÍFICOS DE STREAMLIT
+.streamlit/secrets.toml
+
+# CARPETAS
+/data
+/sessions
+/media
+/output
+/temp
+

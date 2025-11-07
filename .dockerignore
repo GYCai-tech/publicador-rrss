@@ -1,0 +1,32 @@
+# Ficheros de Git y Docker
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+README.md
+
+# Entornos virtuales y secretos
+.venv/
+venv/
+env/
+.env
+
+# Datos, medios y logs (estos se manejan con volúmenes)
+/data/
+/images/
+/media/
+/output/
+/sessions/
+/temp/
+*.db
+*.sqlite3
+*.log
+
+# Carpetas de desarrollo y caché
+__pycache__/
+.idea/
+.vscode/
+.pytest_cache/
+/pruebas_linkedin/
+db_pruebas.py
