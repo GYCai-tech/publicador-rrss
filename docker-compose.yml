@@ -1,0 +1,39 @@
+services:
+  # Servicio para la aplicación web de Streamlit
+  streamlit_app:
+    build: .
+    image: generador-contenido-app:latest
+    container_name: generador_contenido_web
+    command: streamlit run Inicio.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8502:8501"
+    volumes:
+      - ./data:/app/data
+      - ./media:/app/media
+      - ./output:/app/output
+      - ./temp:/app/temp
+      - ./sessions:/app/sessions
+    env_file:
+      - .env
+    environment:
+      - TZ=Europe/Madrid
+    restart: unless-stopped
+
+  # Servicio para el script que publica los posts programados
+  scheduler:
+    build: .
+    image: generador-contenido-app:latest
+    container_name: generador_contenido_scheduler
+    depends_on:
+      streamlit_app:
+        condition: service_started
+    command: python scripts/publish_programmed_posts.py
+    volumes:
+      - ./data:/app/data
+      - ./media:/app/media
+      - ./sessions:/app/sessions
+    env_file:
+      - .env
+    environment:
+      - TZ=Europe/Madrid
+    restart: unless-stopped
