@@ -3,7 +3,7 @@ FROM python:3.11-slim
 # Establecer el directorio de trabajo en el contenedor
 WORKDIR /app
 
-ENV PYTHONPATH "${PYTHONPATH}:/app"
+ENV PYTHONPATH "${PYTHONPATH}:/app/src"
 
 # Actualizar pip e instalar dependencias del sistema
 RUN pip install --upgrade pip && \

@@ -569,15 +569,12 @@ with col_preview:
                                 )
 
                             st.markdown("##### 2. Añade destinatarios manualmente (opcional)")
-                            manual_input = st.text_area(
-                                f"Escribe {contact_label} (uno por línea)",
-                                value="\n".join(st.session_state[manual_contacts_key]),
-                                height=100,
-                                key=f"text_area_manual_{platform}",
-                                help=f"Escribe cada {contact_label.lower()} en una línea separada"
+                            st.session_state[manual_contacts_key] = st_tags(
+                                label=f"Escribe {contact_label} y presiona Enter",
+                                text="Añadir...",
+                                value=st.session_state[manual_contacts_key],
+                                key=f"tags_manual_{platform}"
                             )
-                            # Convertir el texto a lista, eliminando líneas vacías
-                            st.session_state[manual_contacts_key] = [line.strip() for line in manual_input.split('\n') if line.strip()]
 
                             # Combinar los destinatarios de las selecciones y los manuales.
                             final_destinations = destinations_from_selection.union(set(st.session_state[manual_contacts_key]))
