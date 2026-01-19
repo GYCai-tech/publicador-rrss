@@ -1,4 +1,10 @@
 import streamlit as st
+from src.auth import check_password
+
+# Verificar autenticación
+if not check_password():
+    st.stop()
+
 import os
 import time
 import shutil

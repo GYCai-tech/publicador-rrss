@@ -1,11 +1,17 @@
 from src import db_config
 from src.utils import clean_and_split_emails, clean_and_split_phones
+from src.auth import check_password
 import streamlit as st
 import pandas as pd
 import re
 from typing import List, Tuple
 
+# Verificar autenticación
+if not check_password():
+    st.stop()
+
 # --- Configuración e Inicialización ---
+
 st.set_page_config(layout="wide", page_title="Gestión de Contactos", page_icon="👥")
 
 if 'editing_contact_id' not in st.session_state:

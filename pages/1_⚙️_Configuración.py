@@ -4,10 +4,16 @@ import importlib
 from src import prompts
 from src.utils import update_prompt_function
 from src.state import init_states
+from src.auth import check_password
+
+# Verificar autenticación
+if not check_password():
+    st.stop()
 
 init_states()
 
 st.set_page_config(layout="wide")
+
 
 st.title("⚙️ Configuración de Prompts")
 st.markdown("Personaliza las instrucciones que la IA utiliza para generar el contenido.")

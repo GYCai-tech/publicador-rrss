@@ -1,4 +1,10 @@
 import streamlit as st
+from src.auth import check_password
+
+# Verificar autenticación
+if not check_password():
+    st.stop()
+
 from datetime import datetime
 import pandas as pd
 

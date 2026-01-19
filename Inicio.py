@@ -6,12 +6,18 @@ load_dotenv()
 
 from src.state import init_states
 from src.utils import check_env_vars
+from src.auth import check_password
 
 st.set_page_config(
     page_title="Generador IA de Contenido",
     page_icon="🤖",
     layout="wide"
 )
+
+# Verificar autenticación
+if not check_password():
+    st.stop()
+
 
 # Validar variables de entorno
 try:

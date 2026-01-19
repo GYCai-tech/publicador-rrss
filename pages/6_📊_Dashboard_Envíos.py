@@ -1,4 +1,10 @@
 import streamlit as st
+from src.auth import check_password
+
+# Verificar autenticación
+if not check_password():
+    st.stop()
+
 import pandas as pd
 from datetime import datetime
 from src.db_config import get_all_email_send_logs, get_email_send_results, get_email_send_stats
