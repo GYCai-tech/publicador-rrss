@@ -1,4 +1,5 @@
 from src import db_config
+from src.utils import clean_and_split_emails, clean_and_split_phones
 import streamlit as st
 import pandas as pd
 import re
@@ -29,9 +30,11 @@ def _validate_contact_data(name: str, emails: List[str], phones: List[str]) -> T
         return False, "Se requiere al menos un teléfono o un email."
 
     if clean_emails:
-        pattern = r'^[a-zA-Z0-9ñÑ._%+-]+@[a-zA-Z0-9ñÑ.-]+\.[a-zA-Z]{2,}$'
+        # Patrón más permisivo que acepta subdominios, guiones, caracteres internacionales
+        pattern = r'^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ._%+-]+@[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ.-]+\.[a-zA-Z]{2,}$'
         for email in clean_emails:
-            if not re.match(pattern, email):
+            email_lower = email.strip().lower()
+            if not re.match(pattern, email_lower):
                 return False, f"Formato de email inválido para '{email}'."
 
     has_sendable_phone = False
@@ -155,8 +158,26 @@ def import_contacts_dialog():
 
         for index, row in df.iterrows():
             name = str(row[col_map['name']]) if col_map['name'] != '-- No usar --' and col_map['name'] in row else ""
-            emails = [str(row[col]) for col in col_map.get('emails', []) if col in row and pd.notna(row[col]) and str(row[col]).strip()]
-            phones = [str(row[col]) for col in col_map.get('phones', []) if col in row and pd.notna(row[col]) and str(row[col]).strip()]
+
+            # Procesar emails usando la función mejorada de limpieza
+            emails = []
+            for col in col_map.get('emails', []):
+                if col in row and pd.notna(row[col]):
+                    raw_value = str(row[col]).strip()
+                    if raw_value:
+                        # Usar la función robusta de limpieza
+                        cleaned_emails = clean_and_split_emails(raw_value)
+                        emails.extend(cleaned_emails)
+
+            # Procesar teléfonos usando la función mejorada de limpieza
+            phones = []
+            for col in col_map.get('phones', []):
+                if col in row and pd.notna(row[col]):
+                    raw_value = str(row[col]).strip()
+                    if raw_value:
+                        # Usar la función robusta de limpieza
+                        cleaned_phones = clean_and_split_phones(raw_value)
+                        phones.extend(cleaned_phones)
 
             is_valid, error_msg = _validate_contact_data(name, emails, phones)
 

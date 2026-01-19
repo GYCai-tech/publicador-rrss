@@ -12,6 +12,7 @@ class LinkedInClient:
     """
     Cliente para interactuar con la API de LinkedIn v2 para crear publicaciones.
     Maneja la publicación de texto, imágenes (única o carrusel) y vídeo.
+    Soporta publicaciones en perfiles personales y páginas de empresa.
     """
 
     def __init__(self):
@@ -26,11 +27,24 @@ class LinkedInClient:
             "Content-Type": "application/json",
             "X-Restli-Protocol-Version": "2.0.0"
         }
-        self.author_urn = self._get_user_urn()
-        self.post_visibility = os.getenv("POST_VISIBILITY")
+
+        # Verificar si se debe publicar en una página de empresa u organización
+        self.organization_id = os.getenv("LINKEDIN_ORGANIZATION_ID")
+
+        if self.organization_id:
+            # Publicar en página de empresa
+            self.author_urn = f"urn:li:organization:{self.organization_id}"
+            self.is_organization = True
+            logger.info(f"✅ Configurado para publicar en página de empresa: {self.author_urn}")
+        else:
+            # Publicar en perfil personal
+            self.author_urn = self._get_user_urn()
+            self.is_organization = False
+
+        self.post_visibility = os.getenv("POST_VISIBILITY", "PUBLIC")
 
     def _get_user_urn(self):
-        """Obtiene el URN del usuario autenticado."""
+        """Obtiene el URN del usuario autenticado (perfil personal)."""
         logger.info("Obteniendo URN de usuario de LinkedIn...")
         try:
             response = requests.get("https://api.linkedin.com/v2/userinfo", headers={"Authorization": f"Bearer {self.access_token}"})
@@ -128,6 +142,10 @@ class LinkedInClient:
             "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": self.post_visibility}
         }
 
+        # Para organizaciones, usar PUBLIC en lugar de MemberNetworkVisibility si es necesario
+        if self.is_organization and self.post_visibility == "PUBLIC":
+            payload["visibility"] = {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"}
+
         # Añadir la clave "media" solo si hay medios
         if media_list:
             payload["specificContent"]["com.linkedin.ugc.ShareContent"]["media"] = media_list
@@ -141,3 +159,4 @@ class LinkedInClient:
         except requests.exceptions.HTTPError as e:
             logger.error(f"❌ ERROR al crear la publicación final en LinkedIn: {e.response.status_code} - {e.response.text}")
             raise
+

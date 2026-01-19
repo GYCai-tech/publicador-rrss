@@ -28,7 +28,7 @@ htmlcov/
 #  ARCHIVOS DE CONFIGURACIÓN Y SECRETOS
 .env
 *.env
-
+.env.microsoft365
 #  LOGS Y ARCHIVOS TEMPORALES
 *.log
 pip-log.txt

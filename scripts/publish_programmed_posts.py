@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 
 from src.db_config import get_programmed_posts_raw, update_post
-from src.gmail import send_mail
+from src.graph_mail import send_mail_graph as send_mail, send_mail_graph_bulk, send_mail_graph_batch
 from src.wordpress import create_post_wordpress, upload_media
 from src.instagram import post_image_ig, post_carousel_ig, post_video_ig
 # from src.whatsapp import send_whatsapp
@@ -88,14 +88,46 @@ def publicar_post(post: dict):
         elif platform_lower == 'gmail':
             # Adjuntar todas las imágenes y vídeos
             attachments = image_paths + video_paths
-            send_mail(
-                receivers=post.get('contacts', []),
-                subject=post.get('asunto', ''),
-                content_text=post.get('content', ''),
-                content_html=post.get('content_html'),
-                attachments=attachments
-            )
-            logger.info(f"Correo para post {post_id} enviado exitosamente a {post.get('contacts', [])}")
+            contacts = post.get('contacts', [])
+
+            # Si hay más de 1 destinatario, usar envío masivo individual
+            if len(contacts) > 1:
+                logger.info(f"Iniciando envío masivo individual a {len(contacts)} destinatarios para post {post_id}")
+
+                def log_progress(current, total, email):
+                    logger.info(f"[{current}/{total}] Enviando correo a: {email}")
+
+                result = send_mail_graph_batch(
+                    receivers=contacts,
+                    subject=post.get('asunto', ''),
+                    content_text=post.get('content', ''),
+                    content_html=post.get('content_html'),
+                    attachments=attachments,
+                    progress_callback=log_progress,
+                    batch_size=20  # Envío optimizado con Batch API
+                )
+
+                logger.info(f"Envío masivo completado para post {post_id}: {result['successful']}/{result['total']} exitosos")
+
+                if result['failed'] > 0:
+                    logger.warning(f"Hubo {result['failed']} errores en el envío del post {post_id}:")
+                    for failed in result['failed_emails']:
+                        logger.error(f"  - {failed['email']}: {failed['error']}")
+
+                # Considerar exitoso si al menos se envió a 1 destinatario
+                if result['successful'] == 0:
+                    logger.error(f"No se pudo enviar el correo a ningún destinatario para post {post_id}")
+                    return False
+            else:
+                # Para un solo destinatario, usar función simple
+                send_mail(
+                    receivers=contacts,
+                    subject=post.get('asunto', ''),
+                    content_text=post.get('content', ''),
+                    content_html=post.get('content_html'),
+                    attachments=attachments
+                )
+                logger.info(f"Correo para post {post_id} enviado exitosamente a {contacts}")
 
         elif platform_lower == 'instagram':
             caption = post.get('content', '')

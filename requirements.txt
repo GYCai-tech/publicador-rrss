@@ -2,7 +2,7 @@ streamlit~=1.50.0
 streamlit-tags
 streamlit-calendar
 
-Pillow==9.5.0
+Pillow
 pandas~=2.3.3
 
 sqlalchemy~=2.0.43
@@ -25,3 +25,7 @@ heyoo~=0.1.2
 
 openpyxl~=3.1.5
 html2text~=2025.4.15
+msal~=1.31.0
+
+plotly~=5.18.0
+

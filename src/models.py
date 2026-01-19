@@ -163,14 +163,40 @@ def generate_content(platforms: List[str], common_data: Dict[str, Any]) -> Dict[
             }
         except Exception as e:
             logger.error(f"Error al generar contenido para {platform}: {str(e)}")
-            results[platform] = {
-                "content": f"Error: {str(e)}",
-                "metadata": {
-                    "platform": platform,
-                    "timestamp": datetime.now().isoformat(),
-                    "error": str(e)
+
+            # Para Gmail, generar content_html incluso en caso de error (para que se añada el footer)
+            if platform.lower().startswith("gmail"):
+                error_html = f"""
+                <html>
+                <body>
+                    <h2 style="color: #d9534f;">⚠️ Error al generar el contenido</h2>
+                    <p>No se pudo generar el contenido automáticamente debido al siguiente error:</p>
+                    <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 5px; color: #721c24;">
+                        <strong>Error:</strong> {str(e)}
+                    </div>
+                    <p><em>Por favor, verifica tu configuración de OpenAI o escribe el contenido manualmente.</em></p>
+                </body>
+                </html>
+                """
+                results[platform] = {
+                    "content": f"Error: {str(e)}",
+                    "asunto": "⚠️ Error al generar contenido",
+                    "content_html": error_html,
+                    "metadata": {
+                        "platform": platform,
+                        "timestamp": datetime.now().isoformat(),
+                        "error": str(e)
+                    }
                 }
-            }
+            else:
+                results[platform] = {
+                    "content": f"Error: {str(e)}",
+                    "metadata": {
+                        "platform": platform,
+                        "timestamp": datetime.now().isoformat(),
+                        "error": str(e)
+                    }
+                }
 
     return results
 

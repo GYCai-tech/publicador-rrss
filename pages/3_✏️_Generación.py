@@ -8,14 +8,73 @@ from streamlit_tags import st_tags
 from datetime import datetime
 import pandas as pd
 import html2text
+import re
 
 from src.db_config import get_all_media_assets, create_media_asset, create_post, link_media_to_post, title_already_exists
 from src.db_config import get_all_contacts, get_all_contact_lists, get_contacts_by_list
 from src import models, prompts
+from src.graph_mail import EMAIL_FOOTER
 from src.openai_video_generator import generar_guion_con_openai, generar_tts_con_openai, VOICES
 from src.video import create_video_from_media
 from src.utils import save_uploaded_media, image_to_base64, get_image_preview, validar_contacto, get_logo_path
 from src.state import init_states
+
+
+def _format_inline(text):
+    """Aplica formato inline (negrita, cursiva, enlaces) al texto."""
+    # Negrita: **texto** -> <strong>texto</strong>
+    text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+    # Cursiva: *texto* -> <em>texto</em> (solo si no es parte de **)
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)\*(?!\*)', r'<em>\1</em>', text)
+    # Enlaces: [texto](url) -> <a href="url">texto</a>
+    text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2" style="color:#234926; text-decoration:underline;">\1</a>', text)
+    return text
+
+def markdown_to_html(text):
+    """
+    Convierte sintaxis markdown básica a HTML para correos electrónicos.
+    Usa etiquetas <p> para párrafos y gestiona listas para un espaciado óptimo.
+    """
+    if not text:
+        return ""
+
+    # 1. Normalizar saltos de línea
+    text = text.replace('\r\n', '\n')
+    
+    # 2. Separar por bloques (párrafos) usando doble salto de línea
+    blocks = text.split('\n\n')
+    
+    html_blocks = []
+    
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+            
+        # Detectar si es una lista (empieza por "- " o "1. ")
+        if block.startswith('- ') or re.match(r'^\d+\.\s', block):
+            lines = block.split('\n')
+            is_ordered = re.match(r'^\d+\.\s', lines[0])
+            
+            tag = 'ol' if is_ordered else 'ul'
+            html_list = f'<{tag} style="margin-bottom: 15px; padding-left: 20px; margin-top: 0;">'
+            
+            for line in lines:
+                # Limpiar marcadores de lista
+                content = re.sub(r'^(- |\d+\.\s)', '', line.strip())
+                content = _format_inline(content)
+                html_list += f'<li style="margin-bottom: 5px;">{content}</li>'
+            
+            html_list += f'</{tag}>'
+            html_blocks.append(html_list)
+        else:
+            # Es un párrafo normal
+            # Procesar saltos de línea simples dentro del párrafo como <br>
+            content = _format_inline(block)
+            content = content.replace('\n', '<br>')
+            html_blocks.append(f'<p style="margin-bottom: 15px; margin-top: 0;">{content}</p>')
+            
+    return '\n'.join(html_blocks)
 
 init_states()
 st.set_page_config(layout="wide")
@@ -362,7 +421,7 @@ with col_preview:
     if 'content_history' not in st.session_state:
         st.session_state.content_history = {}
     # Unir plataformas seleccionadas y plataformas con contenido para mostrar
-    platforms_to_show = set(st.session_state.get('results', {}).keys())
+    platforms_to_show = sorted(st.session_state.get('results', {}).keys())
 
     if platforms_to_show:
         tabs = st.tabs([f"{plat}" for plat in platforms_to_show])
@@ -376,6 +435,7 @@ with col_preview:
 
         for i, (platform, tab) in enumerate(zip(platforms_to_show, tabs)):
             with tab:
+                # st.write(f"DEBUG: Plataforma actual: '{platform}'") # Descomentar si es necesario depurar
                 content = st.session_state.results[platform]["content"]
                 asunto = st.session_state.results[platform].get("asunto", "")
 
@@ -418,16 +478,53 @@ with col_preview:
                             value=st.session_state.get(f"edited_asunto_{platform}", ""),
                             key=f"asunto_input_edit_{platform}"
                         )
+
+                        # Botones de formato para Gmail
+                        st.markdown("##### 🎨 Formato de texto:")
+                        fmt_col1, fmt_col2, fmt_col3, fmt_col4, fmt_col5 = st.columns(5)
+
+                        with fmt_col1:
+                            if st.button("**B** Negrita", key=f"bold_{platform}", help="Envuelve el texto seleccionado con **", use_container_width=True):
+                                st.info("💡 Para negrita: Escribe **tu texto aquí** en el editor")
+                        with fmt_col2:
+                            if st.button("*I* Cursiva", key=f"italic_{platform}", help="Envuelve el texto seleccionado con *", use_container_width=True):
+                                st.info("💡 Para cursiva: Escribe *tu texto aquí* en el editor")
+                        with fmt_col3:
+                            if st.button("📝 Lista", key=f"list_{platform}", help="Agrega viñetas", use_container_width=True):
+                                st.info("💡 Para lista: Escribe\n- Elemento 1\n- Elemento 2")
+                        with fmt_col4:
+                            if st.button("1️⃣ Numerada", key=f"numlist_{platform}", help="Agrega lista numerada", use_container_width=True):
+                                st.info("💡 Para lista numerada: Escribe\n1. Primero\n2. Segundo")
+                        with fmt_col5:
+                            if st.button("🔗 Enlace", key=f"link_{platform}", help="Inserta un enlace", use_container_width=True):
+                                st.info("💡 Para enlace: Escribe [texto del enlace](https://url.com)")
+
+                        st.caption("ℹ️ Escribe directamente en el editor usando la sintaxis indicada")
+
                     edited = st.text_area(
                         'Modifique la publicación',
                         value=st.session_state[f"edited_content_{platform}"],
                         height=400,
                         key=f"textarea_{platform}",
-                        help="Tip: Selecciona el texto y usa los botones de formato o escribe manualmente **texto** para negrita y *texto* para cursiva"
+                        help="Usa **texto** para negrita, *texto* para cursiva, [texto](url) para enlaces"
                     )
 
                     # Botones de acción para edición
                     col1, col2 = st.columns(2)
+                    
+                    # --- VISTA PREVIA EN TIEMPO REAL (MODO EDICIÓN) ---
+                    if platform.lower().startswith("gmail"):
+                        st.markdown("---")
+                        st.caption("👀 Vista previa en tiempo real:")
+                        # Intentamos coger el valor del widget (lo que estás escribiendo ahora mismo)
+                        # Si no existe (primera carga), cogemos el guardado.
+                        live_text = st.session_state.get(f"textarea_{platform}", st.session_state[f"edited_content_{platform}"])
+                        # Convertir markdown a HTML
+                        formatted_html = markdown_to_html(live_text)
+                        preview_html = f"<div style='font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;'>{formatted_html}</div>{EMAIL_FOOTER}"
+                        st.markdown(preview_html, unsafe_allow_html=True)
+                        st.markdown("---")
+                    # --------------------------------------------------
                     if col1.button("💾 Guardar", key=f"save_edit_{platform}", width='stretch'):
                         st.session_state[f"editing_{platform}"] = False
                         # Limpiar espacios y saltos de línea al final del texto
@@ -436,6 +533,24 @@ with col_preview:
                         st.session_state[f"edited_content_{platform}"] = cleaned_text
                         if cleaned_text != st.session_state.content_history[platform][-1]:
                             st.session_state.content_history[platform].append(cleaned_text)
+
+                        # Para Gmail: actualizar también el content_html con el texto editado
+                        if platform.lower().startswith("gmail"):
+                            # Convertir markdown a HTML
+                            formatted_body = markdown_to_html(cleaned_text)
+                            # Regenerar HTML desde el texto editado
+                            new_html = f"""
+                            <html>
+                            <body>
+                                <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">
+                                    {formatted_body}
+                                </div>
+                            </body>
+                            </html>
+                            """
+                            # Actualizar el content_html en los resultados
+                            st.session_state.results[platform]["content_html"] = new_html
+
                         st.rerun()
 
                     if col2.button("↻ Deshacer ediciones anteriores", key=f"undo_{platform}", width='stretch'):
@@ -473,8 +588,19 @@ with col_preview:
                     # Contenido
                     if platform.lower().startswith("gmail"):
                         st.markdown(f"**Asunto:** {st.session_state[f'edited_asunto_{platform}']}")
+                        st.markdown("---")
+                        st.caption("📧 Vista previa del mensaje final (incluyendo footer):")
 
-                    st.markdown(f"<div class='theme-adaptable-container'>{st.session_state[f'edited_content_{platform}']}</div>", unsafe_allow_html=True)
+                        # Obtener contenido actual editado
+                        current_text = st.session_state[f'edited_content_{platform}']
+
+                        # SIEMPRE convertir el texto actual a HTML para mostrar el formato markdown
+                        formatted_text = markdown_to_html(current_text)
+                        preview_html = f"<div style='font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;'>{formatted_text}</div>{EMAIL_FOOTER}"
+                        st.markdown(preview_html, unsafe_allow_html=True)
+                            
+                    else:
+                        st.markdown(f"<div class='theme-adaptable-container'>{st.session_state[f'edited_content_{platform}']}</div>", unsafe_allow_html=True)
 
                     # Botón de edición
                     st.button("✏️ Editar", key=f"start_edit_{platform}", on_click=lambda p=platform: st.session_state.update({f"editing_{p}": True}), width='stretch')
@@ -540,13 +666,34 @@ with col_preview:
 
                             # Calcular la lista de destinatarios en cada ejecución
                             destinations_from_selection = set()
+                            
+                            def clean_contact_list(raw_list):
+                                """Ayuda a limpiar listas de contactos que puedan venir mal serializadas"""
+                                cleaned = []
+                                for item in raw_list:
+                                    if isinstance(item, str):
+                                        item = item.strip()
+                                        # Si parece una lista serializada '["email"]'
+                                        if item.startswith('[') and item.endswith(']'):
+                                            try:
+                                                # Intentar limpiar caracteres comunes de listas stringificadas
+                                                inner = item.strip("[]").replace('"', '').replace("'", "").split(',')
+                                                cleaned.extend([x.strip() for x in inner if x.strip()])
+                                            except:
+                                                cleaned.append(item)
+                                        else:
+                                            cleaned.append(item)
+                                    else:
+                                        cleaned.append(str(item))
+                                return cleaned
+
                             # Obtener de las listas seleccionadas
                             if st.session_state[list_selection_key]:
                                 for list_id in st.session_state[list_selection_key]:
                                     contacts_in_list = get_contacts_by_list(list_id)
                                     for contact in contacts_in_list:
-                                        destinations_from_selection.update(
-                                            contact.get(tipo_contacto_plural, []))
+                                        raw_contacts = contact.get(tipo_contacto_plural, [])
+                                        destinations_from_selection.update(clean_contact_list(raw_contacts))
 
                             # Obtener de los contactos individuales seleccionados
                             if st.session_state[contact_selection_key]:
@@ -554,8 +701,8 @@ with col_preview:
                                 for contact_id in st.session_state[contact_selection_key]:
                                     contact = contacts_map.get(contact_id)
                                     if contact:
-                                        destinations_from_selection.update(
-                                            contact.get(tipo_contacto_plural, []))
+                                        raw_contacts = contact.get(tipo_contacto_plural, [])
+                                        destinations_from_selection.update(clean_contact_list(raw_contacts))
 
                             # Mostrar los destinatarios seleccionados para dar feedback visual al usuario
                             if destinations_from_selection:
@@ -569,12 +716,20 @@ with col_preview:
                                 )
 
                             st.markdown("##### 2. Añade destinatarios manualmente (opcional)")
-                            st.session_state[manual_contacts_key] = st_tags(
-                                label=f"Escribe {contact_label} y presiona Enter",
-                                text="Añadir...",
-                                value=st.session_state[manual_contacts_key],
-                                key=f"tags_manual_{platform}"
+                            
+                            # Obtener el valor actual del session state si existe
+                            current_manual = ", ".join(st.session_state.get(manual_contacts_key, []))
+                            
+                            manual_text = st.text_input(
+                                "Correos separados por coma",
+                                value=current_manual,
+                                placeholder="correo1@ejemplo.com, correo2@ejemplo.com",
+                                key=f"manual_emails_{platform}"
                             )
+                            if manual_text:
+                                st.session_state[manual_contacts_key] = [e.strip() for e in manual_text.split(",") if e.strip()]
+                            else:
+                                st.session_state[manual_contacts_key] = []
 
                             # Combinar los destinatarios de las selecciones y los manuales.
                             final_destinations = destinations_from_selection.union(set(st.session_state[manual_contacts_key]))
@@ -598,18 +753,52 @@ with col_preview:
                             st.info("No hay medios en la biblioteca. Sube imágenes o genera vídeos para poder adjuntarlos.")
                         else:
                             # Comprobar que el estado para esta plataforma existe
-                            if f"selected_media_ids_{platform}" not in st.session_state:
-                                st.session_state[f"selected_media_ids_{platform}"] = []
+                            # Nota: El key del multiselect maneja automáticamente el session state
+                            multiselect_key = f"selected_media_ids_{platform}"
+
+                            # Inicializar con lista vacía si no existe
+                            if multiselect_key not in st.session_state:
+                                st.session_state[multiselect_key] = []
 
                             st.multiselect(
                                 "Selecciona imágenes o vídeos para esta publicación:",
                                 options=list(asset_options.keys()),
                                 format_func=lambda asset_id: asset_options.get(asset_id, "Medio no encontrado"),
-                                # Lee el estado actual desde la clave de sesión
-                                default=st.session_state[f"selected_media_ids_{platform}"],
-                                # Guarda el nuevo estado en la misma clave de sesión
-                                key=f"selected_media_ids_{platform}"
+                                key=multiselect_key
                             )
+
+                            # Opción para incrustar imágenes (solo Gmail)
+                            if platform.lower().startswith("gmail"):
+                                inline_checked = st.checkbox(
+                                    "Incrustar imágenes en el cuerpo del correo",
+                                    key=f"inline_pref_{platform}",
+                                    help="Si se marca, las imágenes aparecerán dentro del correo (antes del pie de página) en lugar de como adjuntos descargables.",
+                                    value=False
+                                )
+                                if inline_checked:
+                                    st.selectbox(
+                                        "Tamaño de las imágenes",
+                                        options=["Pequeño (300px)", "Mediano (600px)", "Grande (100%)"],
+                                        index=1, # Por defecto Mediano
+                                        key=f"img_size_pref_{platform}",
+                                        help="Define el ancho máximo de las imágenes incrustadas."
+                                    )
+
+                            # DEBUG: Mostrar selección actual (leer directamente después del widget)
+                            current_selection = st.session_state.get(multiselect_key, [])
+
+                            # Logging adicional para debugging
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.info(f"DEBUG Multiselect - Platform: {platform}")
+                            logger.info(f"DEBUG Multiselect - Key: {multiselect_key}")
+                            logger.info(f"DEBUG Multiselect - Current value: {current_selection}")
+                            logger.info(f"DEBUG Multiselect - Asset options available: {list(asset_options.keys())}")
+
+                            if current_selection:
+                                st.caption(f"✅ {len(current_selection)} archivo(s) seleccionado(s) - Se adjuntarán al programar/guardar")
+                            else:
+                                st.caption("ℹ️ No hay archivos seleccionados")
 
                             if platform.lower().startswith("instagram"):
                                 st.info(
@@ -791,11 +980,39 @@ with col_preview:
                                     if fecha_hora_programada <= tiempo_minimo:
                                         st.error("La fecha de programación debe ser al menos 1 minuto posterior a la hora actual")
                                     else:
+                                        # Para Gmail, generar HTML con formato markdown + footer
+                                        final_content_html = None
+                                        if platform.lower().startswith("gmail"):
+                                            current_text = st.session_state[f"edited_content_{platform}"]
+                                            formatted_body = markdown_to_html(current_text)
+                                            final_content_html = f"""
+                                            <html>
+                                            <body>
+                                                <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">
+                                                    {formatted_body}
+                                                </div>
+                                                {EMAIL_FOOTER}
+                                            </body>
+                                            </html>
+                                            """
+                                            
+                                            # Añadir marcador de preferencia si se seleccionó incrustar imágenes
+                                            if st.session_state.get(f"inline_pref_{platform}", False):
+                                                final_content_html = "<!-- PREF:INLINE_IMAGES -->" + final_content_html
+                                                
+                                                # Añadir marcador de tamaño
+                                                size_selection = st.session_state.get(f"img_size_pref_{platform}", "Grande (100%)")
+                                                width_val = "100%"
+                                                if "300px" in size_selection: width_val = "300px"
+                                                elif "600px" in size_selection: width_val = "600px"
+                                                
+                                                final_content_html = f"<!-- PREF:IMG_SIZE:{width_val} -->" + final_content_html
+
                                         # Crear el post (solo texto) para obtener su ID
                                         post_id = create_post(
                                             title=st.session_state[f"title_{platform}"],
                                             content=st.session_state[f"edited_content_{platform}"],
-                                            content_html=st.session_state.results[platform].get("content_html"),
+                                            content_html=final_content_html,
                                             asunto=st.session_state.get(f"edited_asunto_{platform}") if platform.lower().startswith("gmail") else None,
                                             platform=platform,
                                             contacts=contactos_validos if platform.lower().startswith("gmail") or platform.lower().startswith("whatsapp") else [],
@@ -805,11 +1022,21 @@ with col_preview:
                                         # Obtener IDs de los medios seleccionados
                                         media_ids_to_link = st.session_state.get(f"selected_media_ids_{platform}", [])
 
+                                        # DEBUG: Mostrar info de medios
+                                        import logging
+                                        logger = logging.getLogger(__name__)
+                                        logger.info(f"DEBUG Programar - Platform: {platform}")
+                                        logger.info(f"DEBUG Programar - Media IDs: {media_ids_to_link}")
+                                        logger.info(f"DEBUG Programar - Session state keys: {[k for k in st.session_state.keys() if 'selected_media' in k]}")
+
                                         # Enlazar medios al post
                                         if media_ids_to_link:
                                             link_media_to_post(post_id, media_ids_to_link)
-
-                                        st.success(f"¡Publicación programada!")
+                                            st.success(f"¡Publicación programada con {len(media_ids_to_link)} archivo(s) adjunto(s)!")
+                                        else:
+                                            st.success(f"¡Publicación programada! (Sin adjuntos)")
+                                            if platform.lower().startswith("gmail"):
+                                                st.info("💡 Consejo: Puedes adjuntar imágenes desde 'Adjuntar Medios de la Biblioteca' antes de programar.")
 
                             except Exception as e:
                                 st.error(f"Error al programar la publicación: {str(e)}")
@@ -820,11 +1047,39 @@ with col_preview:
                                 if title_already_exists(st.session_state[f"title_{platform}"]):
                                     st.warning(f"🚧 Ya existe una publicación con el título '{st.session_state[f'title_{platform}']}'")
                                 else:
+                                    # Para Gmail, generar HTML con formato markdown + footer
+                                    final_content_html = None
+                                    if platform.lower().startswith("gmail"):
+                                        current_text = st.session_state[f"edited_content_{platform}"]
+                                        formatted_body = markdown_to_html(current_text)
+                                        final_content_html = f"""
+                                        <html>
+                                        <body>
+                                            <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">
+                                                {formatted_body}
+                                            </div>
+                                            {EMAIL_FOOTER}
+                                        </body>
+                                        </html>
+                                        """
+
+                                        # Añadir marcador de preferencia si se seleccionó incrustar imágenes
+                                        if st.session_state.get(f"inline_pref_{platform}", False):
+                                            final_content_html = "<!-- PREF:INLINE_IMAGES -->" + final_content_html
+
+                                            # Añadir marcador de tamaño
+                                            size_selection = st.session_state.get(f"img_size_pref_{platform}", "Grande (100%)")
+                                            width_val = "100%"
+                                            if "300px" in size_selection: width_val = "300px"
+                                            elif "600px" in size_selection: width_val = "600px"
+                                            
+                                            final_content_html = f"<!-- PREF:IMG_SIZE:{width_val} -->" + final_content_html
+
                                     # Crear el post de texto para obtener su ID
                                     post_id = create_post(
                                         title=st.session_state[f"title_{platform}"],
                                         content=st.session_state[f"edited_content_{platform}"],
-                                        content_html=st.session_state.results[platform].get("content_html"),
+                                        content_html=final_content_html,
                                         asunto=st.session_state.get(f"edited_asunto_{platform}") if platform.lower().startswith("gmail") else None,
                                         platform=platform,
                                         contacts=contactos_validos if platform.lower().startswith("gmail") or platform.lower().startswith("whatsapp") else [],
@@ -833,11 +1088,21 @@ with col_preview:
                                     # Obtener IDs de los medios seleccionados
                                     media_ids_to_link = st.session_state.get(f"selected_media_ids_{platform}", [])
 
+                                    # DEBUG: Mostrar info de medios
+                                    import logging
+                                    logger = logging.getLogger(__name__)
+                                    logger.info(f"DEBUG Guardar - Platform: {platform}")
+                                    logger.info(f"DEBUG Guardar - Media IDs: {media_ids_to_link}")
+                                    logger.info(f"DEBUG Guardar - Session state keys: {[k for k in st.session_state.keys() if 'selected_media' in k]}")
+
                                     # Enlazar medios al post
                                     if media_ids_to_link:
                                         link_media_to_post(post_id, media_ids_to_link)
-
-                                    st.success(f"¡Publicación guardada!")
+                                        st.success(f"¡Publicación guardada con {len(media_ids_to_link)} archivo(s) adjunto(s)!")
+                                    else:
+                                        st.success(f"¡Publicación guardada! (Sin adjuntos)")
+                                        if platform.lower().startswith("gmail"):
+                                            st.info("💡 Consejo: Puedes adjuntar imágenes desde 'Adjuntar Medios de la Biblioteca' antes de guardar.")
                             except Exception as e:
                                 st.error(f"Error al guardar la publicación: {str(e)}")
     else:

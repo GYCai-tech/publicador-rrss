@@ -127,6 +127,44 @@ MediaAsset.posts = relationship(
 )
 
 
+class EmailSendLog(Base):
+    """
+    Representa un registro de una operación de envío masivo de correos.
+    """
+    __tablename__ = "email_send_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey('posts.id'), nullable=True)  # Puede ser None para envíos no programados
+    platform = Column(String, nullable=False)  # 'Gmail', 'Outlook', etc.
+    subject = Column(String, nullable=True)
+    total_recipients = Column(Integer, nullable=False)
+    successful_count = Column(Integer, nullable=False, default=0)
+    failed_count = Column(Integer, nullable=False, default=0)
+    started_at = Column(String, nullable=False, default=lambda: datetime.now().isoformat())
+    completed_at = Column(String, nullable=True)
+
+    # Relación con resultados individuales
+    results = relationship("EmailSendResult", back_populates="send_log", cascade="all, delete-orphan")
+
+
+class EmailSendResult(Base):
+    """
+    Representa el resultado de envío de un correo individual dentro de una operación masiva.
+    """
+    __tablename__ = "email_send_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    send_log_id = Column(Integer, ForeignKey('email_send_logs.id'), nullable=False)
+    recipient_email = Column(String, nullable=False)
+    success = Column(Integer, nullable=False)  # 1 para éxito, 0 para fallo (SQLite no tiene Boolean nativo)
+    error_code = Column(String, nullable=True)  # HTTP 429, HTTP 400, etc.
+    error_message = Column(Text, nullable=True)
+    sent_at = Column(String, nullable=False, default=lambda: datetime.now().isoformat())
+
+    # Relación con el log de envío
+    send_log = relationship("EmailSendLog", back_populates="results")
+
+
 def init_db():
     """
     Inicializa la base de datos creando todas las tablas.
@@ -714,7 +752,162 @@ def get_sent_posts_by_platform(platform: str) -> List[Dict[str, Any]]:
             Post.sent_at.isnot(None)
         ).order_by(Post.sent_at.desc()).all()
         return [model_to_dict(post) for post in posts]
+# ==================== FUNCIONES PARA LOGS DE ENVÍO ====================
 
+def create_email_send_log(
+    platform: str,
+    subject: str,
+    total_recipients: int,
+    post_id: Optional[int] = None
+) -> int:
+    """
+    Crea un nuevo log de envío de emails y devuelve su ID.
+
+    Args:
+        platform: Plataforma de envío (ej. 'Gmail')
+        subject: Asunto del correo
+        total_recipients: Número total de destinatarios
+        post_id: ID del post asociado (opcional)
+
+    Returns:
+        ID del log creado
+    """
+    with get_db_session() as session:
+        log = EmailSendLog(
+            platform=platform,
+            subject=subject,
+            total_recipients=total_recipients,
+            post_id=post_id,
+            successful_count=0,
+            failed_count=0
+        )
+        session.add(log)
+        session.flush()  # Para obtener el ID
+        return log.id
+
+
+def add_email_send_result(
+    send_log_id: int,
+    recipient_email: str,
+    success: bool,
+    error_code: Optional[str] = None,
+    error_message: Optional[str] = None
+):
+    """
+    Añade un resultado individual de envío de email.
+
+    Args:
+        send_log_id: ID del log de envío
+        recipient_email: Email del destinatario
+        success: True si el envío fue exitoso
+        error_code: Código de error si falló (ej. 'HTTP 429')
+        error_message: Mensaje de error detallado
+    """
+    with get_db_session() as session:
+        result = EmailSendResult(
+            send_log_id=send_log_id,
+            recipient_email=recipient_email,
+            success=1 if success else 0,
+            error_code=error_code,
+            error_message=error_message
+        )
+        session.add(result)
+
+
+def complete_email_send_log(send_log_id: int, successful_count: int, failed_count: int):
+    """
+    Marca un log de envío como completado con los contadores finales.
+
+    Args:
+        send_log_id: ID del log de envío
+        successful_count: Número de envíos exitosos
+        failed_count: Número de envíos fallidos
+    """
+    with get_db_session() as session:
+        log = session.query(EmailSendLog).filter(EmailSendLog.id == send_log_id).first()
+        if log:
+            log.successful_count = successful_count
+            log.failed_count = failed_count
+            log.completed_at = datetime.now().isoformat()
+
+
+def get_all_email_send_logs() -> List[Dict[str, Any]]:
+    """
+    Obtiene todos los logs de envío de emails ordenados por fecha (más recientes primero).
+
+    Returns:
+        Lista de diccionarios con los datos de cada log
+    """
+    with get_db_session() as session:
+        logs = session.query(EmailSendLog).order_by(EmailSendLog.started_at.desc()).all()
+        result = []
+        for log in logs:
+            log_dict = {
+                'id': log.id,
+                'post_id': log.post_id,
+                'platform': log.platform,
+                'subject': log.subject,
+                'total_recipients': log.total_recipients,
+                'successful_count': log.successful_count,
+                'failed_count': log.failed_count,
+                'started_at': log.started_at,
+                'completed_at': log.completed_at
+            }
+            result.append(log_dict)
+        return result
+
+
+def get_email_send_results(send_log_id: int) -> List[Dict[str, Any]]:
+    """
+    Obtiene todos los resultados individuales de un envío específico.
+
+    Args:
+        send_log_id: ID del log de envío
+
+    Returns:
+        Lista de diccionarios con los resultados individuales
+    """
+    with get_db_session() as session:
+        results = session.query(EmailSendResult).filter(
+            EmailSendResult.send_log_id == send_log_id
+        ).order_by(EmailSendResult.sent_at).all()
+
+        result_list = []
+        for result in results:
+            result_dict = {
+                'id': result.id,
+                'recipient_email': result.recipient_email,
+                'success': bool(result.success),
+                'error_code': result.error_code,
+                'error_message': result.error_message,
+                'sent_at': result.sent_at
+            }
+            result_list.append(result_dict)
+        return result_list
+
+
+def get_email_send_stats() -> Dict[str, Any]:
+    """
+    Obtiene estadísticas generales de los envíos de email.
+
+    Returns:
+        Diccionario con estadísticas agregadas
+    """
+    with get_db_session() as session:
+        from sqlalchemy import func
+
+        total_sends = session.query(func.count(EmailSendLog.id)).scalar() or 0
+        total_emails = session.query(func.sum(EmailSendLog.total_recipients)).scalar() or 0
+        total_successful = session.query(func.sum(EmailSendLog.successful_count)).scalar() or 0
+        total_failed = session.query(func.sum(EmailSendLog.failed_count)).scalar() or 0
+
+        return {
+            'total_send_operations': total_sends,
+            'total_emails_attempted': total_emails,
+            'total_successful': total_successful,
+            'total_failed': total_failed,
+            'success_rate': (total_successful / total_emails * 100) if total_emails > 0 else 0
+        }
 
 
 if __name__ == '__main__':

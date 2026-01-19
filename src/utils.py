@@ -173,10 +173,152 @@ def get_image_preview(image_bytes, target_size):
         return None
 
 
+def clean_and_split_phones(raw_value: str) -> List[str]:
+    """
+    Limpia y divide un string que puede contener uno o múltiples números de teléfono.
+    Maneja múltiples separadores, formatos JSON, comillas, caracteres invisibles, etc.
+
+    Args:
+        raw_value: String que puede contener teléfonos en varios formatos
+
+    Returns:
+        Lista de teléfonos limpios
+    """
+    if not raw_value or not isinstance(raw_value, str):
+        return []
+
+    # Eliminar BOM y caracteres invisibles comunes
+    cleaned = raw_value.replace('\ufeff', '')  # BOM
+    cleaned = cleaned.replace('\xa0', ' ')  # Non-breaking space
+    cleaned = cleaned.replace('\u200b', '')  # Zero-width space
+    cleaned = cleaned.strip()
+
+    if not cleaned:
+        return []
+
+    phones = []
+
+    # Caso 1: Detectar formato JSON/lista: ["phone1", "phone2"]
+    if (cleaned.startswith('[') and cleaned.endswith(']')) or \
+       (cleaned.startswith('{') and cleaned.endswith('}')):
+        inner = cleaned.strip('[]{}')
+        inner = inner.replace('"', '').replace("'", '')
+        parts = inner.split(',')
+        phones.extend([p.strip() for p in parts if p.strip()])
+    else:
+        # Caso 2: Múltiples separadores
+        cleaned = cleaned.replace(';', ',')
+        cleaned = cleaned.replace('|', ',')
+        cleaned = cleaned.replace('\n', ',')
+        cleaned = cleaned.replace('\r', ',')
+        cleaned = cleaned.replace('\t', ',')
+        parts = cleaned.split(',')
+        phones.extend([p.strip() for p in parts if p.strip()])
+
+    # Limpiar cada teléfono individualmente
+    cleaned_phones = []
+    for phone in phones:
+        # Eliminar comillas y paréntesis residuales
+        phone = phone.strip('"\'()[]{}')
+        phone = phone.strip()
+
+        # Verificación básica: debe contener al menos algunos dígitos
+        if phone and any(c.isdigit() for c in phone):
+            cleaned_phones.append(phone)
+
+    # Eliminar duplicados manteniendo el orden
+    seen = set()
+    unique_phones = []
+    for phone in cleaned_phones:
+        if phone not in seen:
+            seen.add(phone)
+            unique_phones.append(phone)
+
+    return unique_phones
+
+
+def clean_and_split_emails(raw_value: str) -> List[str]:
+    """
+    Limpia y divide un string que puede contener uno o múltiples emails.
+    Maneja múltiples separadores, formatos JSON, comillas, caracteres invisibles, etc.
+
+    Args:
+        raw_value: String que puede contener emails en varios formatos
+
+    Returns:
+        Lista de emails limpios y normalizados
+    """
+    if not raw_value or not isinstance(raw_value, str):
+        return []
+
+    # Eliminar BOM y caracteres invisibles comunes
+    cleaned = raw_value.replace('\ufeff', '')  # BOM
+    cleaned = cleaned.replace('\xa0', ' ')  # Non-breaking space
+    cleaned = cleaned.replace('\u200b', '')  # Zero-width space
+    cleaned = cleaned.strip()
+
+    if not cleaned:
+        return []
+
+    emails = []
+
+    # Caso 1: Detectar formato JSON/lista: ["email1", "email2"] o ['email1', 'email2']
+    if (cleaned.startswith('[') and cleaned.endswith(']')) or \
+       (cleaned.startswith('{') and cleaned.endswith('}')):
+        # Eliminar corchetes/llaves y comillas
+        inner = cleaned.strip('[]{}')
+        # Reemplazar comillas
+        inner = inner.replace('"', '').replace("'", '')
+        # Dividir por comas
+        parts = inner.split(',')
+        emails.extend([p.strip() for p in parts if p.strip()])
+    else:
+        # Caso 2: Múltiples separadores: coma, punto y coma, pipe, saltos de línea, tabs
+        # Reemplazar todos los separadores posibles por coma
+        cleaned = cleaned.replace(';', ',')
+        cleaned = cleaned.replace('|', ',')
+        cleaned = cleaned.replace('\n', ',')
+        cleaned = cleaned.replace('\r', ',')
+        cleaned = cleaned.replace('\t', ',')
+
+        # Dividir por coma
+        parts = cleaned.split(',')
+        emails.extend([p.strip() for p in parts if p.strip()])
+
+    # Limpiar cada email individualmente
+    cleaned_emails = []
+    for email in emails:
+        # Eliminar comillas residuales al inicio y fin
+        email = email.strip('"\'')
+        # Eliminar espacios internos extra
+        email = ' '.join(email.split())
+        # Eliminar paréntesis, corchetes residuales
+        email = email.strip('()[]{}')
+        # Convertir a minúsculas (los emails no son case-sensitive)
+        email = email.lower()
+        # Eliminar espacios finales
+        email = email.strip()
+
+        if email and '@' in email:  # Verificación básica
+            cleaned_emails.append(email)
+
+    # Eliminar duplicados manteniendo el orden
+    seen = set()
+    unique_emails = []
+    for email in cleaned_emails:
+        if email not in seen:
+            seen.add(email)
+            unique_emails.append(email)
+
+    return unique_emails
+
+
 def validar_contacto(texto, tipo):
     if tipo == "email":
-        patron = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if re.match(patron, texto):
+        # Patrón más permisivo que acepta subdominios, guiones, caracteres internacionales
+        patron = r'^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ._%+-]+@[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ.-]+\.[a-zA-Z]{2,}$'
+        texto_limpio = texto.strip().lower()
+        if re.match(patron, texto_limpio):
             return True, None
         else:
             return False, "Formato de email inválido. Debe ser 'usuario@dominio.extension'"

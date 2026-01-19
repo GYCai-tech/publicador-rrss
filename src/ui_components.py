@@ -11,7 +11,7 @@ from . import models
 from .instagram import post_image_ig, post_carousel_ig, post_video_ig
 from .wordpress import create_post_wordpress, upload_media
 from .linkedin import LinkedInClient
-from .gmail import send_mail
+from .graph_mail import send_mail_graph as send_mail, send_mail_graph_bulk, send_mail_graph_batch, EMAIL_FOOTER
 from .utils import validar_contacto, handle_add_selection, get_logo_path
 
 
@@ -105,8 +105,28 @@ def display_post_editor(post_id):
             st.session_state[f"edited_title_{post_id}"] = title
 
         if platform.lower().startswith("gmail"):
-            st.markdown("##### Vista Previa del HTML")
-            st.markdown(st.session_state[f"edited_content_html_{post_id}"], unsafe_allow_html=True)
+            st.markdown("##### Vista Previa del HTML (Final)")
+            
+            # Lógica para mostrar vista previa dinámica
+            # Usamos .get() buscando la clave del widget para tener el texto "vivo" antes de guardar
+            current_text = st.session_state.get(f"textarea_detail_{post_id}", st.session_state[f"edited_content_{post_id}"])
+            original_html = st.session_state[f"edited_content_html_{post_id}"]
+            
+            # Si tenemos HTML original y el texto parece coincidir (o no podemos comprobarlo fácilmente), mostramos el HTML
+            # Pero si el usuario está editando el texto plano, queremos ver cómo quedaría ese texto + footer
+            
+            # Simulación simple: Si hay HTML guardado, lo mostramos. 
+            # NOTA: Idealmente, si el usuario edita el texto plano, deberíamos regenerar esta vista.
+            # Vamos a mostrar una vista combinada:
+            
+            if original_html:
+                 st.markdown(original_html, unsafe_allow_html=True)
+            else:
+                 # Fallback si no hay HTML guardado
+                 preview_html = f"<div>{current_text.replace(chr(10), '<br>')}</div>{EMAIL_FOOTER}"
+                 st.markdown(preview_html, unsafe_allow_html=True)
+                 
+            st.info("ℹ️ Si editas el texto de abajo, el formato HTML original se perderá y se usará el texto plano + footer.")
             st.markdown("---")
             st.markdown("##### Editor de Texto Plano")
 
@@ -558,6 +578,11 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
                             st.rerun()
 
                 with col3:
+                    # Opción para incrustar imágenes (solo Gmail)
+                    inline_images_option = False
+                    if platform.lower().startswith("gmail") and post.get('media_assets'):
+                        inline_images_option = st.checkbox("Incrustar imágenes", key=f"inline_opt_{post['id']}", help="Si se marca, las imágenes aparecerán dentro del correo en lugar de como adjuntos.")
+
                     if st.button("🚀Publicar ahora", key=f"publish_now_{post['id']}", width='stretch'):
                         with st.spinner(f"Publicando en {post['platform']}..."):
                             # Extraer los datos del post
@@ -592,14 +617,48 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
 
                             elif platform_lower.startswith("gmail"):
                                 try:
-                                    send_mail(
-                                        subject=asunto,
-                                        content_text=text,
-                                        content_html=post.get('content_html'),
-                                        receivers=contacts,
-                                        attachments=all_attachments
-                                    )
-                                    st.success("Correo enviado exitosamente.")
+                                    # Si hay más de 1 destinatario, usar envío masivo individual
+                                    if len(contacts) > 1:
+                                        with st.status(f"📧 Enviando correos a {len(contacts)} destinatarios...", expanded=True) as status:
+                                            progress_bar = st.progress(0)
+                                            progress_text = st.empty()
+
+                                            def update_progress(current, total, email):
+                                                progress = current / total
+                                                progress_bar.progress(progress)
+                                                progress_text.text(f"Enviando {current}/{total}: {email}")
+
+                                            result = send_mail_graph_batch(
+                                                subject=asunto,
+                                                content_text=text,
+                                                content_html=post.get('content_html'),
+                                                receivers=contacts,
+                                                attachments=all_attachments,
+                                                inline_images=inline_images_option,
+                                                progress_callback=update_progress,
+                                                batch_size=20  # Envío optimizado con Batch API
+                                            )
+
+                                            status.update(label="✅ Envío completado", state="complete")
+
+                                            # Mostrar resumen detallado
+                                            st.success(f"✅ Correos enviados exitosamente a {result['successful']}/{result['total']} destinatarios")
+
+                                            if result['failed'] > 0:
+                                                with st.expander(f"⚠️ Ver {result['failed']} errores"):
+                                                    for failed in result['failed_emails']:
+                                                        st.error(f"❌ {failed['email']}: {failed['error']}")
+                                    else:
+                                        # Para un solo destinatario, usar función simple
+                                        send_mail(
+                                            subject=asunto,
+                                            content_text=text,
+                                            content_html=post.get('content_html'),
+                                            receivers=contacts,
+                                            attachments=all_attachments,
+                                            inline_images=inline_images_option
+                                        )
+                                        st.success("Correo enviado exitosamente.")
                                 except Exception as e:
                                     st.error(f"Error al enviar el correo: {str(e)}")
 
