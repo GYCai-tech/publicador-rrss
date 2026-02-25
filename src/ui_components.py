@@ -4,7 +4,6 @@ import time
 import pandas as pd
 from datetime import datetime
 from streamlit_tags import st_tags
-from src.db_config import get_sent_post 
 
 # --- DEFINIMOS render_header PRIMERO ---
 def render_header():
@@ -224,14 +223,6 @@ def display_post_editor(post_id):
 
         col1, col2 = st.columns(2)
         with col1:
-            fecha_programada = st.date_input("Fecha", value=fecha_inicial, min_value=datetime.now().date(), key=f"fecha_prog_detail_{post_id}")
-        with col2:
-            hora_programada = st.time_input("Hora", value=hora_inicial, key=f"hora_prog_detail_{post_id}", step=300)
-
-        fecha_hora_programada = datetime.combine(fecha_programada, hora_programada)
-
-        col1, col2 = st.columns(2)
-        with col1:
             if st.button("✅ Actualizar y programar", key=f"update_prog_detail_{post_id}", width='stretch'):
                 try:
                     if not st.session_state.get(f"selected_media_ids_{post_id}") and platform.lower().startswith("instagram"):
@@ -250,9 +241,9 @@ def display_post_editor(post_id):
                         }
                         update_post(post_id, **update_data)
                         link_media_to_post(post_id, st.session_state.get(f"selected_media_ids_{post_id}", []))
-                        get_unprogrammed_posts.clear()
-                        get_programmed_posts.clear()
-                        get_sent_posts.clear()
+                        
+                        st.cache_data.clear() # <--- ELIMINA LA CACHÉ VIEJA CORRECTAMENTE
+                        
                         st.success(f"Programada para {fecha_hora_programada}")
                         st.session_state.selected_pub_id = None
                         st.session_state.force_page_rerun = True
@@ -274,9 +265,33 @@ def display_post_editor(post_id):
                     }
                     update_post(post_id, **update_data)
                     link_media_to_post(post_id, st.session_state.get(f"selected_media_ids_{post_id}", []))
-                    get_unprogrammed_posts.clear()
-                    get_programmed_posts.clear()
-                    get_sent_posts.clear()
+                    
+                    st.cache_data.clear() # <--- ELIMINA LA CACHÉ VIEJA CORRECTAMENTE
+                    
+                    st.success("Guardado sin programar")
+                    st.session_state.selected_pub_id = None
+                    st.session_state.force_page_rerun = True
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
+
+        with col2:
+            if st.button("💾 Actualizar sin programar", key=f"update_save_detail_{post_id}", width='stretch'):
+                try:
+                    update_data = {
+                        "title": st.session_state[f"edited_title_{post_id}"],
+                        "content": st.session_state[f"edited_content_{post_id}"],
+                        "content_html": st.session_state[f"edited_content_html_{post_id}"],
+                        "asunto": st.session_state.get(f"edited_asunto_{post_id}"),
+                        "contacts": contactos_validos if platform.lower().startswith("gmail") or platform.lower().startswith("whatsapp") else [],
+                        "fecha_hora": None
+                    }
+                    # Pasamos explícitamente sent_at=None aquí:
+                    update_post(post_id, sent_at=None, **update_data)
+                    link_media_to_post(post_id, st.session_state.get(f"selected_media_ids_{post_id}", []))
+                    
+                    st.cache_data.clear() # <--- LIMPIEZA GLOBAL INFALIBLE
+                    
                     st.success("Guardado sin programar")
                     st.session_state.selected_pub_id = None
                     st.session_state.force_page_rerun = True
