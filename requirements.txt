@@ -6,6 +6,7 @@ Pillow
 pandas~=2.3.3
 
 sqlalchemy~=2.0.43
+psycopg2-binary~=2.9.9
 python-dotenv~=1.1.1
 
 instagrapi~=2.2.1

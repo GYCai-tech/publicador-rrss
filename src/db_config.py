@@ -9,7 +9,10 @@ from sqlalchemy.exc import IntegrityError
 import logging
 from contextlib import contextmanager
 import streamlit as st
+from dotenv import load_dotenv
 
+# Cargar variables de entorno
+load_dotenv()
 
 # Configuración de logging
 logging.basicConfig(
@@ -24,12 +27,29 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuración de la base de datos
-DB_DIR = "data"
-if not os.path.exists(DB_DIR):
-    os.makedirs(DB_DIR)
+USE_POSTGRES = os.getenv("USE_POSTGRES", "false").lower() == "true"
 
-DB_URL = f"sqlite:///{os.path.join(DB_DIR, 'posts.db')}"
-engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+if USE_POSTGRES:
+    # Configuración PostgreSQL
+    POSTGRES_USER = os.getenv("POSTGRES_USER", "admin")
+    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "changeme123")
+    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+    POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+    POSTGRES_DB = os.getenv("POSTGRES_DB", "publicador_rrss")
+
+    DB_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    engine = create_engine(DB_URL, pool_pre_ping=True, pool_size=10, max_overflow=20)
+    logger.info(f"✅ Usando PostgreSQL: {POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
+else:
+    # Configuración SQLite (por defecto)
+    DB_DIR = "data"
+    if not os.path.exists(DB_DIR):
+        os.makedirs(DB_DIR)
+
+    DB_URL = f"sqlite:///{os.path.join(DB_DIR, 'posts.db')}"
+    engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+    logger.info(f"✅ Usando SQLite: {DB_URL}")
+
 Base = declarative_base()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

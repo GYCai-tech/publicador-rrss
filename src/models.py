@@ -2,12 +2,11 @@ import os
 import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from langchain.schema.messages import SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
+from langchain_core.messages import SystemMessage, HumanMessage
 from . import prompts
 from dotenv import load_dotenv
 import openai
+from pydantic import BaseModel, Field
 
 # Configurar logging
 logging.basicConfig(

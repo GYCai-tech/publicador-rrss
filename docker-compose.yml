@@ -43,3 +43,45 @@ services:
     environment:
       - TZ=Europe/Madrid
     restart: unless-stopped
+
+  # Base de datos PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: generador_contenido_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-publicador_rrss}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Servicio de analytics automático
+  analytics:
+    build: .
+    container_name: generador_contenido_analytics
+    depends_on:
+      postgres:
+        condition: service_healthy
+      streamlit_app:
+        condition: service_started
+    command: python scripts/auto_analytics.py
+    volumes:
+      - ./data:/app/data
+      - ./media:/app/media
+    env_file:
+      - .env
+    environment:
+      - TZ=Europe/Madrid
+    restart: always
+
+volumes:
+  postgres_data:

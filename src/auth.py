@@ -1,5 +1,8 @@
 import streamlit as st
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def login_form():
     """Muestra un formulario de inicio de sesión y oculta la navegación."""

@@ -5,7 +5,8 @@
       "Bash(docker exec:*)",
       "Bash(docker cp:*)",
       "Bash(docker-compose build:*)",
-      "Bash(docker-compose up:*)"
+      "Bash(docker-compose up:*)",
+      "Bash(docker ps:*)"
     ],
     "deny": [],
     "ask": []
