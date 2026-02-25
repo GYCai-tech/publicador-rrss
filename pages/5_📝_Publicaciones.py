@@ -18,8 +18,7 @@ st.set_page_config(layout="wide")
 if st.session_state.get('force_page_rerun', False):
     st.session_state.force_page_rerun = False
 
-    get_programmed_posts.clear()
-    get_unprogrammed_posts.clear()
+    st.cache_data.clear()
 
     st.rerun()
 

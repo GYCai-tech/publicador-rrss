@@ -709,7 +709,8 @@ def get_programmed_posts_by_platform(platform: str) -> List[Dict[str, Any]]:
     with get_db_session() as session:
         posts = session.query(Post).filter(
             Post.platform == platform,
-            Post.fecha_hora.isnot(None)
+            Post.fecha_hora.isnot(None),
+            Post.sent_at.is_(None)  # <--- ESTA LÍNEA FALTABA AQUÍ
         ).order_by(Post.fecha_hora.asc()).all()
         return [model_to_dict(post) for post in posts]
 
