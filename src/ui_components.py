@@ -514,7 +514,6 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
                                 from .db_config import get_sent_posts
                                 get_unprogrammed_posts.clear()
                                 get_programmed_posts.clear()
-                                get_sent_posts.clear()
                                 time.sleep(1.5) 
                                 st.rerun() 
     else:
