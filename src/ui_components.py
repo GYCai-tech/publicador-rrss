@@ -4,6 +4,7 @@ import time
 import pandas as pd
 from datetime import datetime
 from streamlit_tags import st_tags
+from src.db_config import get_sent_post 
 
 # --- DEFINIMOS render_header PRIMERO ---
 def render_header():
@@ -244,12 +245,14 @@ def display_post_editor(post_id):
                             "content_html": st.session_state[f"edited_content_html_{post_id}"],
                             "asunto": st.session_state.get(f"edited_asunto_{post_id}"),
                             "contacts": contactos_validos if platform.lower().startswith("gmail") or platform.lower().startswith("whatsapp") else [],
-                            "fecha_hora": fecha_hora_programada.isoformat()
+                            "fecha_hora": fecha_hora_programada.isoformat(),
+                            "sent_at": None
                         }
                         update_post(post_id, **update_data)
                         link_media_to_post(post_id, st.session_state.get(f"selected_media_ids_{post_id}", []))
                         get_unprogrammed_posts.clear()
                         get_programmed_posts.clear()
+                        get_sent_posts.clear()
                         st.success(f"Programada para {fecha_hora_programada}")
                         st.session_state.selected_pub_id = None
                         st.session_state.force_page_rerun = True
@@ -266,12 +269,14 @@ def display_post_editor(post_id):
                         "content_html": st.session_state[f"edited_content_html_{post_id}"],
                         "asunto": st.session_state.get(f"edited_asunto_{post_id}"),
                         "contacts": contactos_validos if platform.lower().startswith("gmail") or platform.lower().startswith("whatsapp") else [],
-                        "fecha_hora": None
+                        "fecha_hora": None,
+                        "sent_at": None
                     }
                     update_post(post_id, **update_data)
                     link_media_to_post(post_id, st.session_state.get(f"selected_media_ids_{post_id}", []))
                     get_unprogrammed_posts.clear()
                     get_programmed_posts.clear()
+                    get_sent_posts.clear()
                     st.success("Guardado sin programar")
                     st.session_state.selected_pub_id = None
                     st.session_state.force_page_rerun = True
@@ -422,6 +427,9 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
                             video_paths = [a['file_path'] for a in media_assets if a['file_type'] == 'video' and os.path.exists(a['file_path'])]
                             all_attachments = image_paths + video_paths
 
+                            # 1. VARIABLE PARA CONTROLAR EL ÉXITO
+                            envio_exitoso = False
+
                             if platform_lower.startswith("instagram"):
                                 try:
                                     from .instagram import post_image_ig, post_carousel_ig, post_video_ig
@@ -431,6 +439,7 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
                                         elif len(image_paths) == 1: post_image_ig(image_path=image_paths[0], caption=text)
                                         else: post_carousel_ig(image_paths=image_paths, caption=text)
                                         st.success("¡Publicado en Instagram!")
+                                        envio_exitoso = True # <-- ÉXITO
                                 except ImportError: st.error("Falta librería 'instagrapi'.")
                                 except Exception as e: st.error(f"Error Instagram: {e}")
 
@@ -444,12 +453,14 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
                                                 batch_size=20
                                             )
                                             st.success(f"Enviado a {result['successful']}/{result['total']}")
+                                            if result['successful'] > 0: envio_exitoso = True # <-- ÉXITO
                                     else:
                                         send_mail(
                                             subject=asunto, content_text=text, content_html=post.get('content_html'),
                                             receivers=contacts, attachments=all_attachments, inline_images=inline_opt
                                         )
                                         st.success("Correo enviado.")
+                                        envio_exitoso = True # <-- ÉXITO
                                 except Exception as e: st.error(f"Error Email: {e}")
 
                             elif platform_lower.startswith("wordpress"):
@@ -464,7 +475,9 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
                                     
                                     final = text + "\n\n" + "\n".join(embed_html)
                                     wp_post = create_post_wordpress(title=title, content=final, status='publish')
-                                    if wp_post: st.success("Publicado en WordPress!")
+                                    if wp_post: 
+                                        st.success("Publicado en WordPress!")
+                                        envio_exitoso = True # <-- ÉXITO
                                     else: st.error("Fallo WordPress")
                                 except Exception as e: st.error(f"Error WP: {e}")
 
@@ -475,9 +488,20 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
                                     imgs = image_paths if not video and image_paths else None
                                     cli.post(text=text, video_path=video, image_paths=imgs)
                                     st.success("¡Publicado en LinkedIn!")
+                                    envio_exitoso = True # <-- ÉXITO
                                 except Exception as e: st.error(f"Error LinkedIn: {e}")
                             else:
                                 st.error("Plataforma no soportada.")
+                                
+                            # 2. SI FUE EXITOSO, ACTUALIZAR BD Y MOVER A HISTORIAL
+                            if envio_exitoso:
+                                update_post(post['id'], sent_at=datetime.now().isoformat())
+                                from .db_config import get_sent_posts
+                                get_unprogrammed_posts.clear()
+                                get_programmed_posts.clear()
+                                get_sent_posts.clear()
+                                time.sleep(1.5) 
+                                st.rerun() 
     else:
         st.warning("No hay publicaciones.")
 
