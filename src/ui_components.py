@@ -221,6 +221,22 @@ def display_post_editor(post_id):
                     hora_inicial = fecha_dt.time()
             except: pass
 
+        col_fecha, col_hora = st.columns(2)
+        with col_fecha:
+            fecha_programada = st.date_input(
+                "📆 Fecha",
+                value=fecha_inicial,
+                min_value=datetime.now().date(),
+                key=f"fecha_prog_{post_id}"
+            )
+        with col_hora:
+            hora_programada = st.time_input(
+                "🕐 Hora",
+                value=hora_inicial,
+                key=f"hora_prog_{post_id}"
+            )
+        fecha_hora_programada = datetime.combine(fecha_programada, hora_programada)
+
         col1, col2 = st.columns(2)
         with col1:
             if st.button("✅ Actualizar y programar", key=f"update_prog_detail_{post_id}", width='stretch'):
@@ -265,33 +281,9 @@ def display_post_editor(post_id):
                     }
                     update_post(post_id, **update_data)
                     link_media_to_post(post_id, st.session_state.get(f"selected_media_ids_{post_id}", []))
-                    
-                    st.cache_data.clear() # <--- ELIMINA LA CACHÉ VIEJA CORRECTAMENTE
-                    
-                    st.success("Guardado sin programar")
-                    st.session_state.selected_pub_id = None
-                    st.session_state.force_page_rerun = True
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
 
-        with col2:
-            if st.button("💾 Actualizar sin programar", key=f"update_save_detail_{post_id}", width='stretch'):
-                try:
-                    update_data = {
-                        "title": st.session_state[f"edited_title_{post_id}"],
-                        "content": st.session_state[f"edited_content_{post_id}"],
-                        "content_html": st.session_state[f"edited_content_html_{post_id}"],
-                        "asunto": st.session_state.get(f"edited_asunto_{post_id}"),
-                        "contacts": contactos_validos if platform.lower().startswith("gmail") or platform.lower().startswith("whatsapp") else [],
-                        "fecha_hora": None
-                    }
-                    # Pasamos explícitamente sent_at=None aquí:
-                    update_post(post_id, sent_at=None, **update_data)
-                    link_media_to_post(post_id, st.session_state.get(f"selected_media_ids_{post_id}", []))
-                    
-                    st.cache_data.clear() # <--- LIMPIEZA GLOBAL INFALIBLE
-                    
+                    st.cache_data.clear()
+
                     st.success("Guardado sin programar")
                     st.session_state.selected_pub_id = None
                     st.session_state.force_page_rerun = True
@@ -352,7 +344,7 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
                     elif post['fecha_hora']: st.markdown(f"⏱️ Programada: {datetime.fromisoformat(post['fecha_hora']).strftime('%d/%m/%Y %H:%M')}")
                 with col3:
                     if post['fecha_hora'] is not None and not post.get('sent_at'):
-                        if st.button("🗑️ Desprogramar", key=f"cancel_{post['id']}", width='stretch'):
+                        if st.button("🗑️ Desprogramar", key=f"cancel_{post_type}_{post['id']}", width='stretch'):
                             try:
                                 update_post(post['id'], fecha_hora=None)
                                 get_unprogrammed_posts.clear()
@@ -397,14 +389,14 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    if st.button("✏️ Editar", key=f"edit_{post['id']}", width='stretch'):
+                    if st.button("✏️ Editar", key=f"edit_{post_type}_{post['id']}", width='stretch'):
                         st.session_state.selected_pub_id = post['id']
                         st.rerun()
                 with col2:
-                    delete_key = f"delete_btn_{post['id']}_{platform}"
-                    confirm_key = f"confirm_delete_{post['id']}_{platform}"
+                    delete_key = f"delete_btn_{post_type}_{post['id']}_{platform}"
+                    confirm_key = f"confirm_delete_{post_type}_{post['id']}_{platform}"
                     if st.session_state.get(confirm_key, False):
-                        if st.button("⚠️ Confirmar", key=f"confirm_{post['id']}_{platform}", width='stretch', type="primary"):
+                        if st.button("⚠️ Confirmar", key=f"confirm_{post_type}_{post['id']}_{platform}", width='stretch', type="primary"):
                             try:
                                 if delete_post(post['id']):
                                     del st.session_state[confirm_key]
@@ -414,7 +406,7 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
                                     time.sleep(0.5)
                                     st.rerun()
                             except Exception as e: st.error(str(e))
-                        if st.button("Cancelar", key=f"cancel_{post['id']}_{platform}", width='stretch'):
+                        if st.button("Cancelar", key=f"cancel_{post_type}_{post['id']}_{platform}", width='stretch'):
                             del st.session_state[confirm_key]
                             st.rerun()
                     else:
@@ -427,9 +419,9 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
                 with col3:
                     inline_opt = False
                     if platform.lower().startswith("gmail") and post.get('media_assets'):
-                        inline_opt = st.checkbox("Incrustar", key=f"inline_opt_{post['id']}")
+                        inline_opt = st.checkbox("Incrustar", key=f"inline_opt_{post_type}_{post['id']}")
 
-                    if st.button("🚀Publicar ahora", key=f"publish_now_{post['id']}", width='stretch'):
+                    if st.button("🚀Publicar ahora", key=f"publish_now_{post_type}_{post['id']}", width='stretch'):
                         with st.spinner(f"Publicando en {post['platform']}..."):
                             text = post.get('content', '')
                             contacts = post.get('contacts', [])
