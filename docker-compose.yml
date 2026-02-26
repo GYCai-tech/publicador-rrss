@@ -59,7 +59,7 @@ services:
       - ./backups:/backups
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-publicador_rrss}"]
       interval: 10s
       timeout: 5s
       retries: 5
