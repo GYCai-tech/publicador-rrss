@@ -19,68 +19,13 @@ import re
 from src.db_config import get_all_media_assets, create_media_asset, create_post, link_media_to_post, title_already_exists
 from src.db_config import get_all_contacts, get_all_contact_lists, get_contacts_by_list
 from src import models, prompts
-from src.graph_mail import EMAIL_FOOTER
+from src.graph_mail import EMAIL_FOOTER, markdown_to_html
 from src.openai_video_generator import generar_guion_con_openai, generar_tts_con_openai, VOICES
 from src.video import create_video_from_media
 from src.utils import save_uploaded_media, image_to_base64, get_image_preview, validar_contacto, get_logo_path
 from src.state import init_states
 
 
-def _format_inline(text):
-    """Aplica formato inline (negrita, cursiva, enlaces) al texto."""
-    # Negrita: **texto** -> <strong>texto</strong>
-    text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
-    # Cursiva: *texto* -> <em>texto</em> (solo si no es parte de **)
-    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)\*(?!\*)', r'<em>\1</em>', text)
-    # Enlaces: [texto](url) -> <a href="url">texto</a>
-    text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2" style="color:#234926; text-decoration:underline;">\1</a>', text)
-    return text
-
-def markdown_to_html(text):
-    """
-    Convierte sintaxis markdown básica a HTML para correos electrónicos.
-    Usa etiquetas <p> para párrafos y gestiona listas para un espaciado óptimo.
-    """
-    if not text:
-        return ""
-
-    # 1. Normalizar saltos de línea
-    text = text.replace('\r\n', '\n')
-    
-    # 2. Separar por bloques (párrafos) usando doble salto de línea
-    blocks = text.split('\n\n')
-    
-    html_blocks = []
-    
-    for block in blocks:
-        block = block.strip()
-        if not block:
-            continue
-            
-        # Detectar si es una lista (empieza por "- " o "1. ")
-        if block.startswith('- ') or re.match(r'^\d+\.\s', block):
-            lines = block.split('\n')
-            is_ordered = re.match(r'^\d+\.\s', lines[0])
-            
-            tag = 'ol' if is_ordered else 'ul'
-            html_list = f'<{tag} style="margin-bottom: 15px; padding-left: 20px; margin-top: 0;">'
-            
-            for line in lines:
-                # Limpiar marcadores de lista
-                content = re.sub(r'^(- |\d+\.\s)', '', line.strip())
-                content = _format_inline(content)
-                html_list += f'<li style="margin-bottom: 5px;">{content}</li>'
-            
-            html_list += f'</{tag}>'
-            html_blocks.append(html_list)
-        else:
-            # Es un párrafo normal
-            # Procesar saltos de línea simples dentro del párrafo como <br>
-            content = _format_inline(block)
-            content = content.replace('\n', '<br>')
-            html_blocks.append(f'<p style="margin-bottom: 15px; margin-top: 0;">{content}</p>')
-            
-    return '\n'.join(html_blocks)
 
 init_states()
 st.set_page_config(layout="wide")
@@ -502,10 +447,46 @@ with col_preview:
                             if st.button("1️⃣ Numerada", key=f"numlist_{platform}", help="Agrega lista numerada", use_container_width=True):
                                 st.info("💡 Para lista numerada: Escribe\n1. Primero\n2. Segundo")
                         with fmt_col5:
-                            if st.button("🔗 Enlace", key=f"link_{platform}", help="Inserta un enlace", use_container_width=True):
-                                st.info("💡 Para enlace: Escribe [texto del enlace](https://url.com)")
+                            if st.button("🔗 Enlace", key=f"link_{platform}", help="Añadir hipervínculo", use_container_width=True):
+                                st.session_state[f"show_link_form_{platform}"] = not st.session_state.get(f"show_link_form_{platform}", False)
 
-                        st.caption("ℹ️ Escribe directamente en el editor usando la sintaxis indicada")
+                        # Formulario de hipervínculo
+                        if st.session_state.get(f"show_link_form_{platform}", False):
+                            with st.container(border=True):
+                                st.caption("🔗 Convertir texto en hipervínculo")
+                                st.markdown(
+                                    "<small>Escribe en el editor el texto que quieres enlazar, "
+                                    "luego cópialo aquí y añade la URL.</small>",
+                                    unsafe_allow_html=True
+                                )
+                                lc1, lc2 = st.columns(2)
+                                with lc1:
+                                    link_text = st.text_input(
+                                        "Texto a enlazar",
+                                        placeholder="p.ej. visita nuestra web",
+                                        key=f"link_text_{platform}",
+                                        help="Debe aparecer exactamente así en el texto del editor"
+                                    )
+                                with lc2:
+                                    link_url = st.text_input(
+                                        "URL de destino",
+                                        placeholder="https://gomezycrespo.com",
+                                        key=f"link_url_{platform}"
+                                    )
+                                if st.button("✅ Aplicar enlace", key=f"insert_link_{platform}", use_container_width=True, type="primary"):
+                                    if link_text and link_url:
+                                        current = st.session_state.get(f"textarea_{platform}", st.session_state[f"edited_content_{platform}"])
+                                        if link_text in current:
+                                            updated = current.replace(link_text, f"[{link_text}]({link_url})", 1)
+                                            st.session_state[f"edited_content_{platform}"] = updated
+                                            if f"textarea_{platform}" in st.session_state:
+                                                del st.session_state[f"textarea_{platform}"]
+                                            st.session_state[f"show_link_form_{platform}"] = False
+                                            st.rerun()
+                                        else:
+                                            st.error(f'No se encontró el texto **"{link_text}"** en el editor. Cópialo exactamente como aparece.')
+                                    else:
+                                        st.warning("Rellena el texto y la URL")
 
                     edited = st.text_area(
                         'Modifique la publicación',

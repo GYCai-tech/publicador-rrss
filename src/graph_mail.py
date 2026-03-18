@@ -34,53 +34,56 @@ except Exception:
 load_dotenv()
 
 # --------------------------------------------------------------------
+# Logo en base64 para el footer de correo
+# --------------------------------------------------------------------
+_LOGO_SRC = "https://gomezycrespo.com/wp-content/uploads/2025/10/PIES-DE-EMAIL-scaled.png"
+
+# --------------------------------------------------------------------
 # FOOTER
 # --------------------------------------------------------------------
 FOOTER_MARKER_TEXT = "PIES-DE-EMAIL"
 FOOTER_MARKER_HTML = "<!-- PIES-DE-EMAIL -->"
 
-EMAIL_FOOTER = """
+_LOGO_IMG = (
+    f'<a href="https://www.gomezycrespo.com" style="text-decoration:none;">'
+    f'<img src="{_LOGO_SRC}" alt="GÓMEZ Y CRESPO" '
+    f'style="display:block; width:420px; height:auto; border:0;">'
+    f'</a>'
+)
+
+EMAIL_FOOTER = f"""
 <br><br>
 <!-- PIES-DE-EMAIL -->
 <table
-  width="50%"
+  width="600"
   cellpadding="0"
   cellspacing="0"
   border="0"
-  align="left"
   style="font-family: Arial, sans-serif; font-size:14px; color:#4F764D; background-color:#fafafa;"
 >
   <tr>
     <td style="padding:15px; vertical-align:top; width:60%;">
-      <strong style="font-size:18px; color:#234926;">Tu Nombre</strong><br>
-      <span style="color:#4F764D;">Tu Cargo</span><br>
-      <a href="mailto:tu-email@ejemplo.com" style="color:#4F764D; text-decoration:none;">tu-email@ejemplo.com</a><br>
-      <a href="https://linkedin.com/in/tu-perfil" style="color:#4F764D; text-decoration:none;">linkedin.com/in/tu-perfil</a><br><br>
-      <strong style="color:#234926;">Tu Empresa S.A.</strong><br>
+      <strong style="font-size:18px; color:#234926;">Victoria Ábalos</strong><br>
+      <span style="color:#4F764D;">International Sales Manager</span><br>
+      <a href="mailto:Sales@gomezycrespo.com" style="color:#4F764D; text-decoration:none;">Sales@gomezycrespo.com</a><br>
+      <a href="https://linkedin.com/in/victoria-abalos-diaz" style="color:#4F764D; text-decoration:none;">linkedin.com/in/victoria-abalos-diaz</a><br><br>
+      <strong style="color:#234926;">Gómez y Crespo S.A.</strong><br>
       <span style="color:#4F764D;">
-        Tu Dirección<br>
-        Tu Ciudad, PAÍS<br>
-        <a href="https://www.tuweb.com" style="color:#4F764D; text-decoration:none;">www.tuweb.com</a><br>
-        Tlf.: +00 000 00 00 00
+        Crta. Castro de Beiro nº41<br>
+        32001 Ourense, SPAIN<br>
+        <a href="https://www.gomezycrespo.com" style="color:#4F764D; text-decoration:none;">www.gomezycrespo.com</a><br>
+        Tlf.: 988 21 77 54 Ext. 114
       </span>
     </td>
-    <td style="padding:15px; vertical-align:top; text-align:right; width:40%;">
-      <a href="https://www.tuweb.com" style="text-decoration:none;">
-        <img
-          src="https://via.placeholder.com/300x100?text=Logo+Empresa"
-          alt="Logo Empresa"
-          style="display:block; width: 300px; height:auto; border:0;"
-        >
-      </a>
+    <td style="padding:15px; vertical-align:middle; text-align:right; width:40%;">
+      {_LOGO_IMG}
     </td>
   </tr>
   <tr>
-    <td colspan="2" style="padding:15px;">
-      <span style="font-size:11px; line-height:1.3; color:#4F764D;">
-        Este mensaje y sus archivos adjuntos van dirigidos exclusivamente a su destinatario, pudiendo contener
-        información confidencial sometida a secreto profesional. No está permitida su reproducción o distribución sin la
-        autorización expresa de la empresa. Si usted no es el destinatario final por favor elimínelo e infórmenos por esta
-        vía.
+    <td colspan="2" style="padding:15px; border-top:1px solid #e0e0e0;">
+      <span style="font-size:11px; line-height:1.5; color:#4F764D;">
+        Este mensaje y sus archivos adjuntos van dirigidos exclusivamente a su destinatario, pudiendo contener información confidencial sometida a secreto profesional. No está permitida su reproducción o distribución sin la autorización expresa de GOMEZ Y CRESPO S.A. Si usted no es el destinatario final por favor elimínelo e infórmenos por esta vía.<br><br>
+        En cumplimiento de la Ley Orgánica 15/1999, de 13 de diciembre, de Protección de Datos de carácter personal, y del REGLAMENTO (UE) 2016/679 DEL PARLAMENTO EUROPEO Y DEL CONSEJO de 27 abril de 2016, le informamos que sus datos serán tratados por GOMEZ Y CRESPO S.A. Pueden ejercer los derechos de acceso, rectificación, cancelación, oposición u otros derechos, poniéndose en contacto con GOMEZ Y CRESPO S.A. Utilizamos sus datos para prestarle los servicios que nos ha solicitado así como enviarle comunicaciones comerciales que sean de su interés legitimados en el consentimiento del interesado. No se cederán sus datos a terceros salvo obligación legal. Puede consultar información adicional y detallada sobre protección de datos dirigiéndose al correo electrónico <a href="mailto:info@gomezycrespo.com" style="color:#4F764D;">info@gomezycrespo.com</a>.
       </span>
     </td>
   </tr>
@@ -151,6 +154,46 @@ def extract_inline_preferences(content_html: Optional[str]) -> tuple[Optional[st
         html = html.replace(size_match.group(0), "")
 
     return html, inline_images, img_width
+
+
+# --------------------------------------------------------------------
+# Conversión Markdown → HTML para cuerpo de correos
+# --------------------------------------------------------------------
+def _format_inline(text: str) -> str:
+    """Aplica formato inline (negrita, cursiva, enlaces) al texto."""
+    text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)\*(?!\*)', r'<em>\1</em>', text)
+    text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2" style="color:#234926; text-decoration:underline;">\1</a>', text)
+    return text
+
+
+def markdown_to_html(text: str) -> str:
+    """Convierte markdown básico a HTML para correos electrónicos."""
+    if not text:
+        return ""
+    text = text.replace('\r\n', '\n')
+    blocks = text.split('\n\n')
+    html_blocks = []
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+        if block.startswith('- ') or re.match(r'^\d+\.\s', block):
+            lines = block.split('\n')
+            is_ordered = re.match(r'^\d+\.\s', lines[0])
+            tag = 'ol' if is_ordered else 'ul'
+            html_list = f'<{tag} style="margin-bottom: 15px; padding-left: 20px; margin-top: 0;">'
+            for line in lines:
+                content = re.sub(r'^(- |\d+\.\s)', '', line.strip())
+                content = _format_inline(content)
+                html_list += f'<li style="margin-bottom: 5px;">{content}</li>'
+            html_list += f'</{tag}>'
+            html_blocks.append(html_list)
+        else:
+            content = _format_inline(block)
+            content = content.replace('\n', '<br>')
+            html_blocks.append(f'<p style="margin-bottom: 15px; margin-top: 0; line-height: 1.6;">{content}</p>')
+    return '\n'.join(html_blocks)
 
 
 def build_attachments_payload(

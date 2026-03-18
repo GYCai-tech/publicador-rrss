@@ -92,7 +92,7 @@ def display_post_editor(post_id):
             st.session_state[f"edited_title_{post_id}"] = title
 
         if platform.lower().startswith("gmail"):
-            from .graph_mail import EMAIL_FOOTER
+            from .graph_mail import EMAIL_FOOTER, markdown_to_html
             st.markdown("##### Vista Previa del HTML (Final)")
             
             current_text = st.session_state.get(f"textarea_detail_{post_id}", st.session_state[f"edited_content_{post_id}"])
@@ -237,6 +237,14 @@ def display_post_editor(post_id):
             )
         fecha_hora_programada = datetime.combine(fecha_programada, hora_programada)
 
+        # Para Gmail: regenerar content_html desde el texto editado (preserva hipervínculos y formato)
+        if platform.lower().startswith("gmail"):
+            from .graph_mail import markdown_to_html, EMAIL_FOOTER
+            _edited_text = st.session_state[f"edited_content_{post_id}"]
+            _formatted_body = markdown_to_html(_edited_text)
+            _final_content_html = f"""<html><body><div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">{_formatted_body}</div>{EMAIL_FOOTER}</body></html>"""
+            st.session_state[f"edited_content_html_{post_id}"] = _final_content_html
+
         col1, col2 = st.columns(2)
         with col1:
             if st.button("✅ Actualizar y programar", key=f"update_prog_detail_{post_id}", width='stretch'):
@@ -257,9 +265,9 @@ def display_post_editor(post_id):
                         }
                         update_post(post_id, **update_data)
                         link_media_to_post(post_id, st.session_state.get(f"selected_media_ids_{post_id}", []))
-                        
+
                         st.cache_data.clear() # <--- ELIMINA LA CACHÉ VIEJA CORRECTAMENTE
-                        
+
                         st.success(f"Programada para {fecha_hora_programada}")
                         st.session_state.selected_pub_id = None
                         st.session_state.force_page_rerun = True
