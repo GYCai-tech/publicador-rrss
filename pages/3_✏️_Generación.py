@@ -478,9 +478,9 @@ with col_preview:
                                         current = st.session_state.get(f"textarea_{platform}", st.session_state[f"edited_content_{platform}"])
                                         if link_text in current:
                                             updated = current.replace(link_text, f"[{link_text}]({link_url})", 1)
+                                            # Actualizamos ambas claves para que el widget recoja el nuevo valor
                                             st.session_state[f"edited_content_{platform}"] = updated
-                                            if f"textarea_{platform}" in st.session_state:
-                                                del st.session_state[f"textarea_{platform}"]
+                                            st.session_state[f"textarea_{platform}"] = updated
                                             st.session_state[f"show_link_form_{platform}"] = False
                                             st.rerun()
                                         else:
@@ -488,9 +488,10 @@ with col_preview:
                                     else:
                                         st.warning("Rellena el texto y la URL")
 
+                    if f"textarea_{platform}" not in st.session_state:
+                        st.session_state[f"textarea_{platform}"] = st.session_state[f"edited_content_{platform}"]
                     edited = st.text_area(
                         'Modifique la publicación',
-                        value=st.session_state[f"edited_content_{platform}"],
                         height=400,
                         key=f"textarea_{platform}",
                         help="Usa **texto** para negrita, *texto* para cursiva, [texto](url) para enlaces"
