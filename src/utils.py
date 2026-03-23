@@ -350,16 +350,20 @@ def handle_add_selection(platform_key, tipo_contacto, valid_contacts, post_id_ke
     if not selected_lists and not selected_contacts_ids:
         return  # No hacer nada si no hay selección
 
+    tipo_contacto_plural = tipo_contacto + "s"  # "email" -> "emails", "phone" -> "phones"
     newly_selected_recipients = set()
     for list_id in selected_lists:
         contacts_in_list = get_contacts_by_list(list_id)
         for contact in contacts_in_list:
-            if contact.get(tipo_contacto):
-                newly_selected_recipients.add(contact[tipo_contacto])
+            for item in contact.get(tipo_contacto_plural, []):
+                if item and item.strip():
+                    newly_selected_recipients.add(item.strip())
     for contact_id in selected_contacts_ids:
         contact = next((c for c in valid_contacts if c['id'] == contact_id), None)
-        if contact and contact.get(tipo_contacto):
-            newly_selected_recipients.add(contact[tipo_contacto])
+        if contact:
+            for item in contact.get(tipo_contacto_plural, []):
+                if item and item.strip():
+                    newly_selected_recipients.add(item.strip())
 
     current_contacts = set(st.session_state.get(contacts_key, []))
     updated_contacts = current_contacts.union(newly_selected_recipients)
