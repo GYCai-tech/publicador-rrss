@@ -14,6 +14,13 @@ import requests
 from dotenv import load_dotenv
 
 try:
+    import dns.resolver
+    _DNS_AVAILABLE = True
+except ImportError:
+    _DNS_AVAILABLE = False
+    print("Advertencia: dnspython no instalado. La validación de dominio de correo estará desactivada.")
+
+try:
     from msal import ConfidentialClientApplication
 except ImportError:
     ConfidentialClientApplication = None
@@ -318,6 +325,28 @@ def get_access_token() -> Optional[str]:
 # --------------------------------------------------------------------
 # Envío simple (1 mensaje a varios destinatarios)
 # --------------------------------------------------------------------
+def validate_email_domain(email: str) -> tuple[bool, str]:
+    """
+    Comprueba que el dominio del email tiene registros MX válidos.
+    Devuelve (True, '') si es válido, (False, mensaje_error) si no.
+    Si dnspython no está disponible, devuelve (True, '') para no bloquear envíos.
+    """
+    if not _DNS_AVAILABLE:
+        return True, ''
+    try:
+        domain = email.strip().lower().split('@')[-1]
+        dns.resolver.resolve(domain, 'MX')
+        return True, ''
+    except dns.resolver.NXDOMAIN:
+        return False, f"El dominio '{email.split('@')[-1]}' no existe"
+    except dns.resolver.NoAnswer:
+        return False, f"El dominio '{email.split('@')[-1]}' no tiene servidor de correo (sin registros MX)"
+    except dns.resolver.Timeout:
+        return True, ''  # En caso de timeout no bloqueamos el envío
+    except Exception:
+        return True, ''  # Ante cualquier error DNS no bloqueamos
+
+
 def send_mail_graph(
     receivers: List[str],
     subject: str,
@@ -608,13 +637,54 @@ def send_mail_graph_batch(
             'failed_emails': [{'email': e, 'error': 'No se pudo obtener token'} for e in receivers]
         }
 
-    # Log BD (opcional)
+    # Validación de dominio DNS antes de enviar
+    valid_receivers = []
+    pre_failed = []
+    for email in receivers:
+        ok, err = validate_email_domain(email)
+        if ok:
+            valid_receivers.append(email)
+        else:
+            pre_failed.append({'email': email, 'error': err})
+            print(f"❌ Dominio inválido: {email} — {err}")
+
+    # Log BD (opcional) — total incluye los pre-fallidos
     send_log_id = None
     if create_email_send_log:
         try:
             send_log_id = create_email_send_log(platform='Gmail', subject=subject, total_recipients=len(receivers))
         except Exception as e:
             print(f"⚠️ No se pudo crear log en BD: {e}")
+
+    # Registrar los pre-fallidos (dominio inválido) en BD
+    if send_log_id and add_email_send_result:
+        for pf in pre_failed:
+            try:
+                add_email_send_result(
+                    send_log_id=send_log_id,
+                    recipient_email=pf['email'],
+                    success=False,
+                    error_code='INVALID_DOMAIN',
+                    error_message=pf['error']
+                )
+            except Exception as e:
+                print(f"⚠️ No se pudo registrar dominio inválido en BD: {e}")
+
+    # Si no quedan correos válidos, devolver resultado directamente
+    if not valid_receivers:
+        result = {
+            'total': len(receivers),
+            'successful': 0,
+            'failed': len(pre_failed),
+            'successful_emails': [],
+            'failed_emails': pre_failed
+        }
+        if send_log_id and complete_email_send_log:
+            try:
+                complete_email_send_log(send_log_id=send_log_id, successful_count=0, failed_count=len(pre_failed))
+            except Exception:
+                pass
+        return result
 
     # Preferencias HTML
     content_html, pref_inline, img_width = extract_inline_preferences(content_html)
@@ -643,15 +713,16 @@ def send_mail_graph_batch(
 
     total = len(receivers)
     successful_emails = []
-    failed_emails = []
+    failed_emails = list(pre_failed)  # incluir los pre-fallidos por dominio inválido
 
-    batches_needed = (total + batch_size - 1) // batch_size
+    valid_total = len(valid_receivers)
+    batches_needed = (valid_total + batch_size - 1) // batch_size
     email_index = 0
 
     for batch_num in range(batches_needed):
         batch_start = batch_num * batch_size
-        batch_end = min(batch_start + batch_size, total)
-        batch_receivers = receivers[batch_start:batch_end]
+        batch_end = min(batch_start + batch_size, valid_total)
+        batch_receivers = valid_receivers[batch_start:batch_end]
 
         batch_requests = []
         for i, receiver_email in enumerate(batch_receivers):
@@ -690,7 +761,7 @@ def send_mail_graph_batch(
 
                 for resp in batch_response.get("responses", []):
                     request_id = int(resp["id"])
-                    receiver_email = receivers[request_id]
+                    receiver_email = valid_receivers[request_id]
                     status_code = resp.get("status", 500)
 
                     if status_code == 202:
