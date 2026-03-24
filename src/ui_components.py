@@ -183,11 +183,13 @@ def display_post_editor(post_id):
 
                 st.session_state[contacts_key] = contactos_validos
 
-                st_tags(
+                current_tags = st_tags(
                     label=contact_label,
                     text="Presiona Enter para añadir",
-                    value=st.session_state[contacts_key]
+                    value=st.session_state[contacts_key],
+                    key=f"tags_detail_{post_id}"
                 )
+                st.session_state[contacts_key] = current_tags
 
         instrucciones = st.text_area(' ', placeholder="Instrucciones para regenerar...", key=f"instrucciones_detail_{post_id}", height=75)
 
@@ -266,7 +268,13 @@ def display_post_editor(post_id):
                         update_post(post_id, **update_data)
                         link_media_to_post(post_id, st.session_state.get(f"selected_media_ids_{post_id}", []))
 
-                        st.cache_data.clear() # <--- ELIMINA LA CACHÉ VIEJA CORRECTAMENTE
+                        st.cache_data.clear()
+
+                        for _k in [f"edited_title_{post_id}", f"edited_asunto_{post_id}", f"edited_content_{post_id}",
+                                   f"edited_content_html_{post_id}", f"post_contacts_{post_id}",
+                                   f"selected_media_ids_{post_id}", f"post_history_{post_id}",
+                                   f"temp_images_{post_id}", f"deleted_images_{post_id}"]:
+                            st.session_state.pop(_k, None)
 
                         st.success(f"Programada para {fecha_hora_programada}")
                         st.session_state.selected_pub_id = None
@@ -291,6 +299,12 @@ def display_post_editor(post_id):
                     link_media_to_post(post_id, st.session_state.get(f"selected_media_ids_{post_id}", []))
 
                     st.cache_data.clear()
+
+                    for _k in [f"edited_title_{post_id}", f"edited_asunto_{post_id}", f"edited_content_{post_id}",
+                               f"edited_content_html_{post_id}", f"post_contacts_{post_id}",
+                               f"selected_media_ids_{post_id}", f"post_history_{post_id}",
+                               f"temp_images_{post_id}", f"deleted_images_{post_id}"]:
+                        st.session_state.pop(_k, None)
 
                     st.success("Guardado sin programar")
                     st.session_state.selected_pub_id = None
@@ -460,22 +474,21 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
 
                             elif platform_lower.startswith("gmail"):
                                 try:
-                                    if len(contacts) > 1:
-                                        with st.status("Enviando masivo...", expanded=True):
+                                    if not contacts:
+                                        st.error("No hay destinatarios configurados para este correo.")
+                                    else:
+                                        with st.status("Enviando correo...", expanded=True):
                                             result = send_mail_graph_batch(
                                                 subject=asunto, content_text=text, content_html=post.get('content_html'),
                                                 receivers=contacts, attachments=all_attachments, inline_images=inline_opt,
                                                 batch_size=20
                                             )
-                                            st.success(f"Enviado a {result['successful']}/{result['total']}")
-                                            if result['successful'] > 0: envio_exitoso = True # <-- ÉXITO
-                                    else:
-                                        send_mail(
-                                            subject=asunto, content_text=text, content_html=post.get('content_html'),
-                                            receivers=contacts, attachments=all_attachments, inline_images=inline_opt
-                                        )
-                                        st.success("Correo enviado.")
-                                        envio_exitoso = True # <-- ÉXITO
+                                            st.success(f"Enviado a {result['successful']}/{result['total']} destinatarios")
+                                            if result.get('failed_emails'):
+                                                for fe in result['failed_emails']:
+                                                    st.warning(f"⚠️ {fe['email']}: {fe['error']}")
+                                            if result['successful'] > 0:
+                                                envio_exitoso = True
                                 except Exception as e: st.error(f"Error Email: {e}")
 
                             elif platform_lower.startswith("wordpress"):
@@ -514,8 +527,9 @@ def display_posts(posts, date_range, sort_by, post_type, usar_filtro_fecha=False
                                 from .db_config import get_sent_posts
                                 get_unprogrammed_posts.clear()
                                 get_programmed_posts.clear()
-                                time.sleep(1.5) 
-                                st.rerun() 
+                                get_sent_posts.clear()
+                                time.sleep(1.5)
+                                st.rerun()
     else:
         st.warning("No hay publicaciones.")
 
