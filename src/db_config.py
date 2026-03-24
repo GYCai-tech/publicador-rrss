@@ -931,6 +931,32 @@ def get_email_send_stats() -> Dict[str, Any]:
         }
 
 
+def mark_email_as_bounced(recipient_email: str, error_message: str = 'Rebote NDR recibido en bandeja') -> int:
+    """
+    Marca como fallidos todos los registros de envío exitoso de un email dado.
+    Actualiza también los contadores del log padre.
+    Devuelve el número de registros actualizados.
+    """
+    updated = 0
+    with get_db_session() as session:
+        results = session.query(EmailSendResult).filter(
+            EmailSendResult.recipient_email == recipient_email,
+            EmailSendResult.success == 1
+        ).all()
+        for result in results:
+            result.success = 0
+            result.error_code = 'NDR_BOUNCE'
+            result.error_message = error_message[:500]
+            updated += 1
+            # Ajustar contadores del log padre
+            log = session.query(EmailSendLog).filter(EmailSendLog.id == result.send_log_id).first()
+            if log:
+                if log.successful_count and log.successful_count > 0:
+                    log.successful_count -= 1
+                log.failed_count = (log.failed_count or 0) + 1
+    return updated
+
+
 if __name__ == '__main__':
     # Ejecuta esta línea una vez para crear la base de datos y las tablas
     print("Inicializando la base de datos...")

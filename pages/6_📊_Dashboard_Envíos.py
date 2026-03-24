@@ -7,7 +7,8 @@ if not check_password():
 
 import pandas as pd
 from datetime import datetime
-from src.db_config import get_all_email_send_logs, get_email_send_results, get_email_send_stats
+from src.db_config import get_all_email_send_logs, get_email_send_results, get_email_send_stats, mark_email_as_bounced
+from src.graph_mail import fetch_ndr_bounces
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -63,6 +64,56 @@ with col4:
         value=stats['total_emails_attempted'],
         help="Número total de emails procesados (exitosos + fallidos)"
     )
+
+# ==================== SECCIÓN 1b: DETECCIÓN DE REBOTES NDR ====================
+st.header("📨 Detección de Rebotes")
+st.markdown(
+    "Busca en la bandeja del remitente los correos de error **'Undeliverable'** que llegan "
+    "cuando un destinatario no existe, y los registra como fallos en este dashboard."
+)
+
+col_ndr1, col_ndr2 = st.columns([2, 1])
+with col_ndr1:
+    ndr_hours = st.slider("Buscar rebotes de las últimas N horas", min_value=1, max_value=168, value=48, step=1)
+with col_ndr2:
+    st.markdown("<br>", unsafe_allow_html=True)
+    run_ndr = st.button("🔍 Buscar rebotes ahora", use_container_width=True)
+
+if run_ndr:
+    with st.spinner("Leyendo bandeja de entrada en busca de rebotes..."):
+        try:
+            bounces = fetch_ndr_bounces(since_hours=ndr_hours)
+        except Exception as e:
+            st.error(f"Error al leer bandeja: {e}")
+            bounces = []
+
+    if not bounces:
+        st.success("No se encontraron rebotes en el período seleccionado.")
+    else:
+        st.warning(f"Se encontraron **{len(bounces)} rebote(s)**. Actualizando dashboard...")
+        updated_total = 0
+        rows = []
+        for b in bounces:
+            n = mark_email_as_bounced(
+                recipient_email=b['failed_email'],
+                error_message=f"NDR recibido: {b['ndr_subject']}"
+            )
+            updated_total += n
+            rows.append({
+                'Email fallido': b['failed_email'],
+                'Asunto original': b['original_subject'],
+                'Rebote recibido': b['received_at'],
+                'Registros actualizados': n
+            })
+
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        if updated_total > 0:
+            st.success(f"✅ {updated_total} registro(s) marcados como fallidos por rebote NDR. Recarga la página para ver las estadísticas actualizadas.")
+        else:
+            st.info("Los rebotes encontrados no coinciden con envíos registrados en el dashboard (puede que sean anteriores al período de logs).")
+
+st.markdown("---")
 
 # ==================== SECCIÓN 2: GRÁFICOS ====================
 if stats['total_emails_attempted'] > 0:

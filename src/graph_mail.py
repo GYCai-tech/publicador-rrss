@@ -822,6 +822,98 @@ def send_mail_graph_batch(
 
 
 # --------------------------------------------------------------------
+# Detección de rebotes NDR desde la bandeja del remitente
+# --------------------------------------------------------------------
+def fetch_ndr_bounces(since_hours: int = 48) -> list:
+    """
+    Lee la bandeja del remitente buscando correos de rebote (NDR / Undeliverable).
+    Devuelve lista de dicts con: failed_email, original_subject, received_at, ndr_message.
+    """
+    config = get_graph_config()
+    if not config:
+        return []
+
+    access_token = get_access_token()
+    if not access_token:
+        return []
+
+    from datetime import datetime, timedelta, timezone
+    since_dt = (datetime.now(timezone.utc) - timedelta(hours=since_hours)).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    sender_email = config["sender_email"]
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+
+    # Buscar mensajes con asunto que empieza por "Undeliverable:" o "No entregado:"
+    filter_query = (
+        "(startswith(subject,'Undeliverable:') or startswith(subject,'No entregado:') "
+        "or startswith(subject,'Delivery Status Notification'))"
+        f" and receivedDateTime ge {since_dt}"
+    )
+    url = (
+        f"https://graph.microsoft.com/v1.0/users/{sender_email}/messages"
+        f"?$filter={requests.utils.quote(filter_query)}"
+        f"&$select=id,subject,receivedDateTime,body"
+        f"&$top=100&$orderby=receivedDateTime desc"
+    )
+
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            print(f"⚠️ fetch_ndr_bounces: HTTP {response.status_code} — {response.text[:200]}")
+            return []
+    except Exception as e:
+        print(f"⚠️ fetch_ndr_bounces: error de conexión — {e}")
+        return []
+
+    messages = response.json().get("value", [])
+    bounces = []
+
+    # Patrones para extraer el email fallido del cuerpo del NDR
+    email_patterns = [
+        r"Your message to\s+([\w._%+\-]+@[\w.\-]+\.[a-zA-Z]{2,})\s+couldn",   # Exchange EN
+        r"Su mensaje a\s+([\w._%+\-]+@[\w.\-]+\.[a-zA-Z]{2,})\s+no",          # Exchange ES
+        r"Final-Recipient:\s*rfc822;\s*([\w._%+\-]+@[\w.\-]+\.[a-zA-Z]{2,})", # RFC 3464
+        r"Original-Recipient:\s*rfc822;\s*([\w._%+\-]+@[\w.\-]+\.[a-zA-Z]{2,})",
+        r"<([\w._%+\-]+@[\w.\-]+\.[a-zA-Z]{2,})>",                            # fallback genérico
+    ]
+
+    for msg in messages:
+        subject = msg.get("subject", "")
+        received_at = msg.get("receivedDateTime", "")
+        body_content = msg.get("body", {}).get("content", "")
+
+        # Determinar asunto original (quitar prefijos NDR)
+        original_subject = subject
+        for prefix in ["Undeliverable: ", "No entregado: ", "Delivery Status Notification (Failure): "]:
+            if subject.startswith(prefix):
+                original_subject = subject[len(prefix):]
+                break
+
+        # Buscar el email fallido en el cuerpo
+        failed_email = None
+        for pattern in email_patterns:
+            match = re.search(pattern, body_content, re.IGNORECASE)
+            if match:
+                failed_email = match.group(1).strip().lower()
+                # Excluir el propio remitente y direcciones de sistema
+                if failed_email != sender_email.lower() and 'postmaster' not in failed_email:
+                    break
+                else:
+                    failed_email = None
+
+        if failed_email:
+            bounces.append({
+                'failed_email': failed_email,
+                'original_subject': original_subject,
+                'received_at': received_at,
+                'ndr_subject': subject,
+            })
+            print(f"📨 NDR detectado: {failed_email} — '{original_subject}'")
+
+    return bounces
+
+
+# --------------------------------------------------------------------
 # Test conexión
 # --------------------------------------------------------------------
 def test_graph_connection() -> bool:
