@@ -29,7 +29,6 @@ def display_post_editor(post_id):
             f"edited_content_{post_id}",
             f"edited_content_html_{post_id}",
             f"post_contacts_{post_id}",
-            f"tags_detail_{post_id}",
             f"selected_media_ids_{post_id}",
             f"post_history_{post_id}",
             f"temp_images_{post_id}",
@@ -173,19 +172,16 @@ def display_post_editor(post_id):
                 st.button("Añadir Selección", key=f"add_selection_detail_{platform}", on_click=handle_add_selection, args=(platform, tipo_contacto, valid_contacts, post_id), width='stretch')
 
                 contacts_key = f"post_contacts_{post_id}"
-                tags_key = f"tags_detail_{post_id}"
-
-                # Inicializar el estado del widget desde los contactos del post (solo primera vez)
-                if tags_key not in st.session_state:
-                    st.session_state[tags_key] = st.session_state.get(contacts_key, [])
 
                 current_tags = st_tags(
                     label=contact_label,
                     text="Presiona Enter para añadir",
-                    key=tags_key
+                    value=list(st.session_state.get(contacts_key, []))
                 )
+                # Guardar lo que el usuario tiene en el widget
+                st.session_state[contacts_key] = current_tags
 
-                # Validar lo que hay en el widget y mostrar avisos
+                # Validar y mostrar avisos (para los botones de guardar)
                 contactos_validos, contactos_invalidos = [], []
                 for c in current_tags:
                     es_valido, error = validar_contacto(c, "email" if platform.lower().startswith("gmail") else "telefono")
@@ -195,8 +191,6 @@ def display_post_editor(post_id):
                 if contactos_invalidos:
                     for c, error in contactos_invalidos:
                         st.warning(f"• '{c}': {error} (no se enviará)")
-
-                st.session_state[contacts_key] = contactos_validos
 
         instrucciones = st.text_area(' ', placeholder="Instrucciones para regenerar...", key=f"instrucciones_detail_{post_id}", height=75)
 
@@ -279,8 +273,8 @@ def display_post_editor(post_id):
 
                         for _k in [f"edited_title_{post_id}", f"edited_asunto_{post_id}", f"edited_content_{post_id}",
                                    f"edited_content_html_{post_id}", f"post_contacts_{post_id}",
-                                   f"tags_detail_{post_id}", f"selected_media_ids_{post_id}",
-                                   f"post_history_{post_id}", f"temp_images_{post_id}", f"deleted_images_{post_id}"]:
+                                   f"selected_media_ids_{post_id}", f"post_history_{post_id}",
+                                   f"temp_images_{post_id}", f"deleted_images_{post_id}"]:
                             st.session_state.pop(_k, None)
 
                         st.success(f"Programada para {fecha_hora_programada}")
